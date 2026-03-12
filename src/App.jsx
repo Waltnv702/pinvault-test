@@ -262,15 +262,51 @@ function AddPinForm({ onAdd, userId }) {
   const [loading, setLoading] = useState(false)
   const [ok, setOk] = useState(false)
   const [error, setError] = useState('')
+  const [identifying, setIdentifying] = useState(false)
+  const [identified, setIdentified] = useState(false)
   const fileRef = useRef()
+  const aiRef = useRef()
 
   function handleFile(e) {
     const file = e.target.files[0]
     if (!file) return
-    setImageFile(file); setImageUrl('')
+    setImageFile(file); setImageUrl(''); setIdentified(false)
     const reader = new FileReader()
     reader.onload = ev => setPreview(ev.target.result)
     reader.readAsDataURL(file)
+  }
+
+  function handleAiFile(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setImageFile(file); setImageUrl(''); setIdentified(false)
+    const reader = new FileReader()
+    reader.onload = ev => {
+      setPreview(ev.target.result)
+      identifyPin(ev.target.result)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  async function identifyPin(imageData) {
+    setIdentifying(true); setError('')
+    try {
+      const { data, error } = await supabase.functions.invoke('identify-pin', {
+        body: { image: imageData }
+      })
+      if (error) throw error
+      if (data.found) {
+        setName(data.name || '')
+        setSeries(data.series || '')
+        setDesc(data.description || '')
+        setIdentified(true)
+      } else {
+        setError(`Could not identify pin: ${data.reason || 'Please fill in details manually'}`)
+      }
+    } catch(e) {
+      setError('AI identification failed: ' + e.message)
+    }
+    setIdentifying(false)
   }
 
   async function submit() {
@@ -287,8 +323,9 @@ function AddPinForm({ onAdd, userId }) {
         finalUrl = data.publicUrl
       }
       await onAdd({ name:name.trim(), series:series.trim(), description:desc.trim(), image_url:finalUrl, list })
-      setName(''); setSeries(''); setDesc(''); setImageUrl(''); setPreview(''); setImageFile(null)
+      setName(''); setSeries(''); setDesc(''); setImageUrl(''); setPreview(''); setImageFile(null); setIdentified(false)
       if (fileRef.current) fileRef.current.value = ''
+      if (aiRef.current) aiRef.current.value = ''
       setOk(true); setTimeout(() => setOk(false), 2500)
     } catch(e) { setError(e.message) }
     setLoading(false)
@@ -299,6 +336,40 @@ function AddPinForm({ onAdd, userId }) {
   return (
     <div style={{ maxWidth:540 }} className="fade-up">
       <div className="page-title" style={{ marginBottom:18 }}>✨ Add a New Pin</div>
+
+      {/* AI Identifier Section */}
+      <div style={{ background:'linear-gradient(135deg,rgba(124,58,237,0.15),rgba(219,39,119,0.15))', border:'1px solid rgba(124,58,237,0.4)', borderRadius:16, padding:'18px', marginBottom:18 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+          <span style={{ fontSize:22 }}>🤖</span>
+          <div>
+            <div style={{ color:'#e2d9f3', fontWeight:'bold', fontSize:14 }}>AI Pin Identifier</div>
+            <div style={{ color:'#a78bfa', fontSize:11 }}>Take a photo and Claude will identify your pin!</div>
+          </div>
+        </div>
+
+        {identifying ? (
+          <div style={{ textAlign:'center', padding:'16px 0', color:'#a78bfa' }}>
+            <div style={{ fontSize:28, marginBottom:8 }}>🔍</div>
+            <div style={{ fontSize:13 }}>Claude is identifying your pin...</div>
+          </div>
+        ) : identified ? (
+          <div style={{ textAlign:'center', padding:'10px 0' }}>
+            <div style={{ fontSize:24, marginBottom:4 }}>✅</div>
+            <div style={{ color:'#34d399', fontSize:13, fontWeight:'bold' }}>Pin identified! Details filled in below.</div>
+            <button onClick={() => { setIdentified(false); if(aiRef.current) aiRef.current.value='' }}
+              style={{ marginTop:8, padding:'5px 14px', border:'1px solid rgba(255,255,255,0.2)', borderRadius:8, background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:12 }}>
+              Try another photo
+            </button>
+          </div>
+        ) : (
+          <label style={{ display:'block', textAlign:'center', padding:'14px', border:'2px dashed rgba(124,58,237,0.5)', borderRadius:12, color:'#c4b5fd', cursor:'pointer', fontSize:14, fontWeight:600, transition:'all .2s' }}>
+            📷 Take Photo to Auto-Identify
+            <input ref={aiRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={handleAiFile} />
+          </label>
+        )}
+      </div>
+
+      {/* Manual form */}
       <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:20, padding:'22px 18px' }}>
         <label style={lbl}>Pin Name *</label>
         <input className="field-input" placeholder="e.g. Mickey Mouse 50th Anniversary" value={name} onChange={e => setName(e.target.value)} />
@@ -317,19 +388,30 @@ function AddPinForm({ onAdd, userId }) {
             </button>
           ))}
         </div>
+
         <label style={lbl}>Pin Image</label>
-        <input className="field-input" placeholder="Paste image URL..." value={imageUrl}
-          onChange={e => { setImageUrl(e.target.value); setPreview(e.target.value); setImageFile(null) }} />
-        <div style={{ textAlign:'center', color:'#475569', fontSize:12, margin:'-6px 0 12px' }}>— or —</div>
-        <label style={{ display:'block', textAlign:'center', padding:'15px', border:'1px dashed rgba(255,255,255,0.2)', borderRadius:12, color:'#94a3b8', cursor:'pointer', fontSize:14, fontWeight:600, marginBottom:14 }}>
-          📷 Take Photo or Choose from Library
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={handleFile} />
-        </label>
-        {preview && (
-          <div style={{ width:110, height:110, borderRadius:12, overflow:'hidden', border:'2px solid rgba(124,58,237,0.5)', marginBottom:16 }}>
-            <img src={preview} alt="preview" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+        {preview ? (
+          <div style={{ display:'flex', gap:12, alignItems:'center', marginBottom:14 }}>
+            <div style={{ width:90, height:90, borderRadius:10, overflow:'hidden', border:'2px solid rgba(124,58,237,0.5)', flexShrink:0 }}>
+              <img src={preview} alt="preview" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+            </div>
+            <button onClick={() => { setPreview(''); setImageFile(null); setImageUrl(''); setIdentified(false); if(fileRef.current) fileRef.current.value=''; if(aiRef.current) aiRef.current.value='' }}
+              style={{ padding:'8px 14px', border:'1px solid rgba(255,99,99,0.3)', borderRadius:8, background:'rgba(220,38,38,0.1)', color:'#f87171', cursor:'pointer', fontSize:13 }}>
+              Remove
+            </button>
           </div>
+        ) : (
+          <>
+            <input className="field-input" placeholder="Paste image URL..." value={imageUrl}
+              onChange={e => { setImageUrl(e.target.value); setPreview(e.target.value); setImageFile(null) }} />
+            <div style={{ textAlign:'center', color:'#475569', fontSize:12, margin:'-6px 0 12px' }}>— or —</div>
+            <label style={{ display:'block', textAlign:'center', padding:'13px', border:'1px dashed rgba(255,255,255,0.2)', borderRadius:12, color:'#94a3b8', cursor:'pointer', fontSize:14, fontWeight:600, marginBottom:14 }}>
+              📁 Choose from Library
+              <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleFile} />
+            </label>
+          </>
         )}
+
         {error && <div style={{ color:'#f87171', fontSize:13, marginBottom:12 }}>⚠️ {error}</div>}
         <button className="primary-btn" onClick={submit} disabled={loading}
           style={{ background:ok?'linear-gradient(135deg,#059669,#0891b2)':loading?'rgba(124,58,237,0.4)':'linear-gradient(135deg,#7c3aed,#db2777)' }}>
