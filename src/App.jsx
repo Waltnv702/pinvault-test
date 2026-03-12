@@ -193,14 +193,14 @@ function AuthScreen({ onLogin }) {
 
   return (
     <div style={{ minHeight:'100vh', background:'linear-gradient(135deg,#0f0a1e,#1e1040,#0f172a)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-      <div className="auth-card fade-up">
-        <div style={{ fontSize:54, marginBottom:8 }}>🏰</div>
-        <div style={{ fontSize:28, color:'#f9fafb', letterSpacing:3, marginBottom:4, fontWeight:'bold' }}>PinVault</div>
-        <div style={{ color:'#a78bfa', fontSize:13, marginBottom:26 }}>Your Disney Pin Collection ✨</div>
-        <div style={{ display:'flex', gap:8, marginBottom:18 }}>
+      <div className="fade-up" style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:24, padding:'44px 36px', width:'100%', maxWidth:420, textAlign:'center', boxShadow:'0 25px 60px rgba(0,0,0,0.6)' }}>
+        <div style={{ fontSize:60, marginBottom:8 }}>🏰</div>
+        <div style={{ fontSize:32, color:'#f9fafb', letterSpacing:3, marginBottom:4, fontWeight:'bold' }}>PinVault</div>
+        <div style={{ color:'#a78bfa', fontSize:13, marginBottom:28 }}>Your Disney Pin Collection ✨</div>
+        <div style={{ display:'flex', gap:8, marginBottom:20 }}>
           {['login','register'].map(m => (
             <button key={m} onClick={() => { setMode(m); setError(''); setMsg('') }}
-              style={{ flex:1, padding:'12px 0', border:`1px solid ${mode===m?'#7c3aed':'rgba(255,255,255,0.1)'}`, borderRadius:10, background:mode===m?'rgba(124,58,237,0.35)':'transparent', color:mode===m?'#e2d9f3':'#94a3b8', cursor:'pointer', fontSize:14, fontWeight:600 }}>
+              style={{ flex:1, padding:'11px 0', border:`1px solid ${mode===m?'#7c3aed':'rgba(255,255,255,0.1)'}`, borderRadius:10, background:mode===m?'rgba(124,58,237,0.35)':'transparent', color:mode===m?'#e2d9f3':'#94a3b8', cursor:'pointer', fontSize:14, fontWeight:600 }}>
               {m === 'login' ? 'Sign In' : 'Create Account'}
             </button>
           ))}
@@ -210,7 +210,7 @@ function AuthScreen({ onLogin }) {
         {error && <div style={{ color:'#f87171', fontSize:13, marginBottom:10, textAlign:'left' }}>⚠️ {error}</div>}
         {msg && <div style={{ color:'#34d399', fontSize:13, marginBottom:10, textAlign:'left', lineHeight:1.5 }}>{msg}</div>}
         <button className="primary-btn" onClick={submit} disabled={loading}
-          style={{ background:loading?'rgba(124,58,237,0.4)':'linear-gradient(135deg,#7c3aed,#db2777)', marginTop:4 }}>
+          style={{ background:loading?'rgba(124,58,237,0.4)':'linear-gradient(135deg,#7c3aed,#db2777)', marginTop:6, fontSize:15, letterSpacing:1 }}>
           {loading ? '⏳ Please wait...' : mode==='login' ? '✨ Enter the Magic' : '🏰 Start My Collection'}
         </button>
       </div>
