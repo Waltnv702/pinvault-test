@@ -1,7 +1,4 @@
-export const config = { maxDuration: 30 }
-
 export default async function handler(req, res) {
-  // Handle CORS
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
@@ -11,7 +8,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ found: false, reason: 'Method not allowed' })
+    return res.status(405).json({ found: false, reason: `Method ${req.method} not allowed` })
   }
 
   try {
@@ -23,11 +20,10 @@ export default async function handler(req, res) {
 
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
     if (!ANTHROPIC_API_KEY) {
-      return res.status(500).json({ found: false, reason: 'API key not configured' })
+      return res.status(500).json({ found: false, reason: 'API key not configured on server' })
     }
 
     const isUrl = image.startsWith('http')
-
     let mediaType = 'image/jpeg'
     if (!isUrl) {
       if (image.includes('data:image/png')) mediaType = 'image/png'
@@ -48,14 +44,13 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              imageContent,
-              {
-                type: 'text',
-                text: `You are an expert on Disney pins and pin trading. Analyze this image and identify the Disney pin shown.
+        messages: [{
+          role: 'user',
+          content: [
+            imageContent,
+            {
+              type: 'text',
+              text: `You are an expert on Disney pins and pin trading. Analyze this image and identify the Disney pin shown.
 
 Respond with ONLY a valid JSON object, no markdown, no extra text:
 
@@ -64,16 +59,15 @@ If you can identify it:
 
 If you cannot identify it:
 {"found":false,"reason":"Brief explanation"}`
-              }
-            ]
-          }
-        ]
+            }
+          ]
+        }]
       })
     })
 
     if (!claudeResponse.ok) {
       const errText = await claudeResponse.text()
-      return res.status(500).json({ found: false, reason: `Claude API error: ${claudeResponse.status}` })
+      return res.status(500).json({ found: false, reason: `Claude API error: ${claudeResponse.status} - ${errText}` })
     }
 
     const claudeData = await claudeResponse.json()
@@ -84,7 +78,7 @@ If you cannot identify it:
       const cleaned = text.replace(/```json\n?|\n?```/g, '').trim()
       pinData = JSON.parse(cleaned)
     } catch {
-      pinData = { found: false, reason: 'Could not parse response' }
+      pinData = { found: false, reason: 'Could not parse AI response' }
     }
 
     return res.status(200).json(pinData)
