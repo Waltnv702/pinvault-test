@@ -513,100 +513,209 @@ function ProfilePage({ user, haveCount, wantCount }) {
 }
 
 // ── Pin Books Page ────────────────────────────────────────────────────────────
-const BOOK_EMOJIS = ['📌','⭐','🎭','🚀','👸','🦁','🧊','🎄','🎃','🏰','🌊','🔥','💎','🎪','🦋']
+const BOOK_ICONS = [
+  { icon:'🏰', label:'Castle' },
+  { icon:'✨', label:'Magic' },
+  { icon:'👸', label:'Princess' },
+  { icon:'🤴', label:'Prince' },
+  { icon:'🚀', label:'Space' },
+  { icon:'🌊', label:'Ocean' },
+  { icon:'🦁', label:'Animals' },
+  { icon:'🧊', label:'Frozen' },
+  { icon:'🎄', label:'Holiday' },
+  { icon:'🎃', label:'Halloween' },
+  { icon:'💎', label:'Rare' },
+  { icon:'🔥', label:'Hot' },
+  { icon:'🌹', label:'Beauty' },
+  { icon:'🍎', label:'Snow White' },
+  { icon:'🧚', label:'Fairy' },
+  { icon:'🦋', label:'Fantasy' },
+  { icon:'⚡', label:'Power' },
+  { icon:'🎭', label:'Villain' },
+  { icon:'🎪', label:'Circus' },
+  { icon:'🌟', label:'Star' },
+  { icon:'🎠', label:'Carousel' },
+  { icon:'🧜', label:'Mermaid' },
+  { icon:'🦄', label:'Unicorn' },
+  { icon:'🐭', label:'Mickey' },
+  { icon:'🎶', label:'Music' },
+  { icon:'🏆', label:'Limited Ed' },
+  { icon:'🌺', label:'Tropical' },
+  { icon:'🎯', label:'Traders' },
+  { icon:'💫', label:'Wish List' },
+  { icon:'🗺️', label:'Adventure' },
+]
 
-function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin }) {
+function SelectablePinCard({ pin, selected, onToggle }) {
+  return (
+    <div onClick={() => onToggle(pin.id)}
+      style={{ background: selected ? 'rgba(124,58,237,0.2)' : 'rgba(255,255,255,0.04)', border: `2px solid ${selected ? '#7c3aed' : 'rgba(255,255,255,0.1)'}`, borderRadius:14, overflow:'hidden', cursor:'pointer', transition:'all .15s', position:'relative' }}>
+      {/* Checkmark */}
+      <div style={{ position:'absolute', top:6, left:6, width:22, height:22, borderRadius:'50%', background: selected ? '#7c3aed' : 'rgba(0,0,0,0.5)', border: selected ? '2px solid #a78bfa' : '2px solid rgba(255,255,255,0.3)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, zIndex:2, transition:'all .15s' }}>
+        {selected && '✓'}
+      </div>
+      <div style={{ width:'100%', height:100, background:COLORS[hashCode(pin.id)%COLORS.length], display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+        {pin.image_url
+          ? <img src={pin.image_url} alt={pin.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e=>e.target.style.display='none'} />
+          : <span style={{ fontSize:28, opacity:.65 }}>📌</span>}
+      </div>
+      <div style={{ padding:'8px 10px' }}>
+        <div className="card-name">{pin.name}</div>
+        {pin.series && <div className="card-series">{pin.series}</div>}
+      </div>
+    </div>
+  )
+}
+
+function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdateBook }) {
   const [newName, setNewName] = useState('')
-  const [newEmoji, setNewEmoji] = useState('📌')
+  const [newIcon, setNewIcon] = useState('🏰')
+  const [newPublic, setNewPublic] = useState(true)
   const [adding, setAdding] = useState(false)
   const [selectedBook, setSelectedBook] = useState(null)
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [showIconPicker, setShowIconPicker] = useState(false)
+  const [selectedPins, setSelectedPins] = useState([])
+  const [mode, setMode] = useState('view') // 'view' | 'add' | 'remove'
 
   async function handleAdd() {
     if (!newName.trim()) return
     setAdding(true)
-    await onAddBook({ name: newName.trim(), emoji: newEmoji })
-    setNewName(''); setNewEmoji('📌'); setShowEmojiPicker(false)
+    await onAddBook({ name: newName.trim(), emoji: newIcon, is_public: newPublic })
+    setNewName(''); setNewIcon('🏰'); setNewPublic(true); setShowIconPicker(false)
     setAdding(false)
   }
 
-  // If viewing a specific book
+  function togglePin(id) {
+    setSelectedPins(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id])
+  }
+
+  async function applyBulk() {
+    const book = books.find(b => b.id === selectedBook)
+    if (!book) return
+    for (const pid of selectedPins) {
+      await onAssignPin(pid, mode === 'add' ? book.id : null)
+    }
+    setSelectedPins([]); setMode('view')
+  }
+
+  // ── Book detail view ──
   if (selectedBook) {
     const book = books.find(b => b.id === selectedBook)
     if (!book) { setSelectedBook(null); return null }
     const bookPins = pins.filter(p => p.book_id === book.id)
-    const unassigned = pins.filter(p => !p.book_id)
+    const availablePins = pins.filter(p => !p.book_id)
 
+    if (mode === 'add' || mode === 'remove') {
+      const pool = mode === 'add' ? availablePins : bookPins
+      return (
+        <div className="fade-up">
+          <button onClick={() => { setMode('view'); setSelectedPins([]) }}
+            style={{ background:'transparent', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:14, marginBottom:16, padding:0 }}>
+            ← Cancel
+          </button>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:10 }}>
+            <div>
+              <div className="page-title" style={{ fontSize:17 }}>{mode==='add' ? '＋ Add Pins' : '− Remove Pins'}</div>
+              <div style={{ color:'#64748b', fontSize:12, marginTop:2 }}>Tap pins to {mode==='add'?'select':'deselect'} • {selectedPins.length} selected</div>
+            </div>
+            <button onClick={applyBulk} disabled={selectedPins.length===0}
+              style={{ padding:'10px 20px', border:'none', borderRadius:10, background: selectedPins.length===0 ? 'rgba(124,58,237,0.3)' : 'linear-gradient(135deg,#7c3aed,#db2777)', color:'#fff', cursor: selectedPins.length===0 ? 'not-allowed' : 'pointer', fontSize:13, fontWeight:'bold' }}>
+              {mode==='add' ? `＋ Add ${selectedPins.length}` : `− Remove ${selectedPins.length}`}
+            </button>
+          </div>
+          {pool.length === 0 ? (
+            <div style={{ textAlign:'center', padding:'40px 0', color:'#64748b' }}>
+              {mode==='add' ? 'All your pins are already in books!' : 'No pins in this book yet.'}
+            </div>
+          ) : (
+            <>
+              <div style={{ display:'flex', gap:8, marginBottom:14 }}>
+                <button onClick={() => setSelectedPins(pool.map(p=>p.id))}
+                  style={{ padding:'7px 14px', border:'1px solid rgba(124,58,237,0.4)', borderRadius:8, background:'rgba(124,58,237,0.15)', color:'#c4b5fd', cursor:'pointer', fontSize:12, fontWeight:600 }}>
+                  Select All
+                </button>
+                <button onClick={() => setSelectedPins([])}
+                  style={{ padding:'7px 14px', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:12, fontWeight:600 }}>
+                  Clear
+                </button>
+              </div>
+              <div className="pin-grid">
+                {pool.map(pin => (
+                  <SelectablePinCard key={pin.id} pin={pin} selected={selectedPins.includes(pin.id)} onToggle={togglePin} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )
+    }
+
+    // Normal book view
     return (
       <div className="fade-up">
         <button onClick={() => setSelectedBook(null)}
-          style={{ display:'flex', alignItems:'center', gap:6, background:'transparent', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:14, marginBottom:16, padding:0 }}>
+          style={{ background:'transparent', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:14, marginBottom:16, padding:0 }}>
           ← Back to Books
         </button>
-        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6, flexWrap:'wrap' }}>
           <span style={{ fontSize:32 }}>{book.emoji}</span>
           <div className="page-title">{book.name}</div>
+          {/* Public/Private toggle */}
+          <button onClick={() => onUpdateBook(book.id, { is_public: !book.is_public })}
+            style={{ marginLeft:'auto', padding:'5px 12px', border:`1px solid ${book.is_public ? 'rgba(5,150,105,0.5)' : 'rgba(255,255,255,0.15)'}`, borderRadius:20, background: book.is_public ? 'rgba(5,150,105,0.15)' : 'rgba(255,255,255,0.05)', color: book.is_public ? '#34d399' : '#64748b', cursor:'pointer', fontSize:12, fontWeight:600 }}>
+            {book.is_public ? '🌐 Public' : '🔒 Private'}
+          </button>
         </div>
-        <div style={{ display:'inline-block', background:'rgba(124,58,237,0.3)', border:'1px solid rgba(124,58,237,0.5)', borderRadius:20, padding:'3px 14px', fontSize:12, color:'#c4b5fd', marginBottom:20 }}>
-          {bookPins.length} pin{bookPins.length!==1?'s':''}
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:20, flexWrap:'wrap' }}>
+          <div style={{ background:'rgba(124,58,237,0.3)', border:'1px solid rgba(124,58,237,0.5)', borderRadius:20, padding:'3px 14px', fontSize:12, color:'#c4b5fd' }}>
+            {bookPins.length} pin{bookPins.length!==1?'s':''}
+          </div>
+          <div style={{ fontSize:11, color: book.is_public ? '#34d399' : '#64748b' }}>
+            {book.is_public ? '🌐 Visible to other traders' : '🔒 Only you can see this'}
+          </div>
         </div>
 
-        {/* Pins in this book */}
+        {/* Action buttons */}
+        <div style={{ display:'flex', gap:8, marginBottom:20, flexWrap:'wrap' }}>
+          <button onClick={() => { setMode('add'); setSelectedPins([]) }}
+            style={{ padding:'9px 16px', border:'1px solid rgba(124,58,237,0.4)', borderRadius:10, background:'rgba(124,58,237,0.15)', color:'#c4b5fd', cursor:'pointer', fontSize:13, fontWeight:600 }}>
+            ＋ Add Pins
+          </button>
+          {bookPins.length > 0 && (
+            <button onClick={() => { setMode('remove'); setSelectedPins([]) }}
+              style={{ padding:'9px 16px', border:'1px solid rgba(255,99,99,0.3)', borderRadius:10, background:'rgba(220,38,38,0.1)', color:'#f87171', cursor:'pointer', fontSize:13, fontWeight:600 }}>
+              − Remove Pins
+            </button>
+          )}
+        </div>
+
         {bookPins.length === 0 ? (
-          <div style={{ textAlign:'center', padding:'30px 0', color:'#64748b', marginBottom:24 }}>
+          <div style={{ textAlign:'center', padding:'40px 0', color:'#64748b' }}>
             <div style={{ fontSize:40, marginBottom:10, opacity:.4 }}>{book.emoji}</div>
-            No pins in this book yet — add some below!
+            No pins yet — tap <strong style={{color:'#a78bfa'}}>＋ Add Pins</strong> to get started!
           </div>
         ) : (
-          <div className="pin-grid" style={{ marginBottom:24 }}>
+          <div className="pin-grid">
             {bookPins.map(pin => (
               <div key={pin.id} style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:14, overflow:'hidden' }}>
                 <div style={{ width:'100%', height:110, background:COLORS[hashCode(pin.id)%COLORS.length], display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
                   {pin.image_url
                     ? <img src={pin.image_url} alt={pin.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e=>e.target.style.display='none'} />
-                    : <span style={{ fontSize:30, opacity:.65 }}>📌</span>}
+                    : <span style={{ fontSize:28, opacity:.65 }}>📌</span>}
                 </div>
                 <div style={{ padding:'8px 10px' }}>
                   <div className="card-name">{pin.name}</div>
                   {pin.series && <div className="card-series">{pin.series}</div>}
-                  <button onClick={() => onAssignPin(pin.id, null)}
-                    style={{ marginTop:6, width:'100%', padding:'6px 0', border:'1px solid rgba(255,99,99,0.3)', borderRadius:7, background:'rgba(220,38,38,0.1)', color:'#f87171', cursor:'pointer', fontSize:11, fontWeight:600 }}>
-                    Remove from book
-                  </button>
                 </div>
               </div>
             ))}
           </div>
         )}
-
-        {/* Add pins from unassigned */}
-        {unassigned.length > 0 && (
-          <>
-            <div style={{ fontSize:13, fontWeight:'bold', color:'#a78bfa', marginBottom:12 }}>Add pins to this book:</div>
-            <div className="pin-grid">
-              {unassigned.map(pin => (
-                <div key={pin.id} style={{ background:'rgba(255,255,255,0.04)', border:'1px dashed rgba(255,255,255,0.15)', borderRadius:14, overflow:'hidden', cursor:'pointer' }}
-                  onClick={() => onAssignPin(pin.id, book.id)}>
-                  <div style={{ width:'100%', height:110, background:COLORS[hashCode(pin.id)%COLORS.length], display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
-                    {pin.image_url
-                      ? <img src={pin.image_url} alt={pin.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e=>e.target.style.display='none'} />
-                      : <span style={{ fontSize:30, opacity:.65 }}>📌</span>}
-                  </div>
-                  <div style={{ padding:'8px 10px' }}>
-                    <div className="card-name">{pin.name}</div>
-                    {pin.series && <div className="card-series">{pin.series}</div>}
-                    <div style={{ marginTop:6, textAlign:'center', fontSize:11, color:'#a78bfa', fontWeight:600 }}>＋ Add to book</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
       </div>
     )
   }
 
-  // Books list view
+  // ── Books list view ──
   return (
     <div className="fade-up">
       <div className="page-title" style={{ marginBottom:6 }}>📚 Pin Books</div>
@@ -615,24 +724,34 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin }) {
       {/* Create new book */}
       <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:16, padding:'18px', marginBottom:24 }}>
         <div style={{ fontSize:12, fontWeight:'bold', color:'#a78bfa', marginBottom:10, letterSpacing:.5 }}>CREATE NEW BOOK</div>
-        <div style={{ display:'flex', gap:8, marginBottom:10 }}>
-          <button onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            style={{ width:46, height:46, borderRadius:10, border:'1px solid rgba(255,255,255,0.15)', background:'rgba(255,255,255,0.07)', fontSize:22, cursor:'pointer', flexShrink:0 }}>
-            {newEmoji}
+        <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+          <button onClick={() => setShowIconPicker(!showIconPicker)}
+            style={{ width:48, height:48, borderRadius:10, border:'1px solid rgba(255,255,255,0.15)', background:'rgba(255,255,255,0.07)', fontSize:24, cursor:'pointer', flexShrink:0 }}>
+            {newIcon}
           </button>
-          <input className="field-input" style={{ marginBottom:0, flex:1 }} placeholder="Book name e.g. Star Wars, Princess..." value={newName}
+          <input className="field-input" style={{ marginBottom:0, flex:1 }} placeholder="Book name e.g. Star Wars, Traders..." value={newName}
             onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key==='Enter' && handleAdd()} />
         </div>
-        {showEmojiPicker && (
-          <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:10, padding:10, background:'rgba(0,0,0,0.3)', borderRadius:10 }}>
-            {BOOK_EMOJIS.map(em => (
-              <button key={em} onClick={() => { setNewEmoji(em); setShowEmojiPicker(false) }}
-                style={{ width:36, height:36, borderRadius:8, border:`2px solid ${newEmoji===em?'#7c3aed':'transparent'}`, background:'rgba(255,255,255,0.07)', fontSize:18, cursor:'pointer' }}>
-                {em}
+        {showIconPicker && (
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:6, marginBottom:12, padding:10, background:'rgba(0,0,0,0.3)', borderRadius:10 }}>
+            {BOOK_ICONS.map(({ icon, label }) => (
+              <button key={icon} onClick={() => { setNewIcon(icon); setShowIconPicker(false) }} title={label}
+                style={{ height:40, borderRadius:8, border:`2px solid ${newIcon===icon?'#7c3aed':'transparent'}`, background: newIcon===icon ? 'rgba(124,58,237,0.3)' : 'rgba(255,255,255,0.05)', fontSize:20, cursor:'pointer' }}>
+                {icon}
               </button>
             ))}
           </div>
         )}
+        {/* Public/Private toggle */}
+        <div style={{ display:'flex', gap:8, marginBottom:14 }}>
+          {[{val:true, label:'🌐 Public', desc:'Visible to traders'}, {val:false, label:'🔒 Private', desc:'Only you'}].map(opt => (
+            <button key={String(opt.val)} onClick={() => setNewPublic(opt.val)}
+              style={{ flex:1, padding:'10px 8px', border:`1px solid ${newPublic===opt.val ? (opt.val ? 'rgba(5,150,105,0.6)' : 'rgba(124,58,237,0.5)') : 'rgba(255,255,255,0.1)'}`, borderRadius:10, background: newPublic===opt.val ? (opt.val ? 'rgba(5,150,105,0.15)' : 'rgba(124,58,237,0.15)') : 'transparent', color: newPublic===opt.val ? (opt.val ? '#34d399' : '#c4b5fd') : '#64748b', cursor:'pointer', fontSize:12, fontWeight:600 }}>
+              <div>{opt.label}</div>
+              <div style={{ fontSize:10, opacity:.7, marginTop:2 }}>{opt.desc}</div>
+            </button>
+          ))}
+        </div>
         <button className="primary-btn" onClick={handleAdd} disabled={adding || !newName.trim()}
           style={{ background: adding||!newName.trim() ? 'rgba(124,58,237,0.3)' : 'linear-gradient(135deg,#7c3aed,#db2777)' }}>
           {adding ? '⏳ Creating...' : '＋ Create Book'}
@@ -650,15 +769,18 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin }) {
           {books.map(book => {
             const count = pins.filter(p => p.book_id === book.id).length
             return (
-              <div key={book.id} onClick={() => setSelectedBook(book.id)}
+              <div key={book.id} onClick={() => { setSelectedBook(book.id); setMode('view'); setSelectedPins([]) }}
                 style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:16, padding:'18px 14px', cursor:'pointer', transition:'all .2s', position:'relative' }}
                 onMouseEnter={e => e.currentTarget.style.border='1px solid rgba(124,58,237,0.5)'}
                 onMouseLeave={e => e.currentTarget.style.border='1px solid rgba(255,255,255,0.09)'}>
                 <div style={{ fontSize:36, marginBottom:8 }}>{book.emoji}</div>
                 <div style={{ fontWeight:'bold', color:'#f1f5f9', fontSize:14, marginBottom:4 }}>{book.name}</div>
-                <div style={{ fontSize:11, color:'#a78bfa' }}>{count} pin{count!==1?'s':''}</div>
+                <div style={{ fontSize:11, color:'#a78bfa', marginBottom:4 }}>{count} pin{count!==1?'s':''}</div>
+                <div style={{ fontSize:10, color: book.is_public ? '#34d399' : '#64748b' }}>
+                  {book.is_public ? '🌐 Public' : '🔒 Private'}
+                </div>
                 <button onClick={e => { e.stopPropagation(); if(window.confirm(`Delete "${book.name}"?`)) onDeleteBook(book.id) }}
-                  style={{ position:'absolute', top:8, right:8, width:24, height:24, border:'none', borderRadius:6, background:'rgba(220,38,38,0.15)', color:'#f87171', cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
+                  style={{ position:'absolute', top:8, right:8, width:26, height:26, border:'none', borderRadius:6, background:'rgba(220,38,38,0.15)', color:'#f87171', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
               </div>
             )
           })}
@@ -732,6 +854,11 @@ export default function App() {
     setPins(prev => prev.map(p => p.book_id === id ? {...p, book_id: null} : p))
   }
 
+  async function updateBook(id, updates) {
+    await supabase.from('books').update(updates).eq('id', id)
+    setBooks(prev => prev.map(b => b.id === id ? {...b, ...updates} : b))
+  }
+
   async function assignPin(pinId, bookId) {
     await supabase.from('pins').update({ book_id: bookId }).eq('id', pinId)
     setPins(prev => prev.map(p => p.id === pinId ? {...p, book_id: bookId} : p))
@@ -798,7 +925,7 @@ export default function App() {
       <div className="main-content">
         {tab==='have'    && <PinList pins={pins} listType="have" onDelete={deletePin} onMove={movePin} loading={pinsLoading} />}
         {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} loading={pinsLoading} />}
-        {tab==='books'   && <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} />}
+        {tab==='books'   && <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} onUpdateBook={updateBook} />}
         {tab==='add'     && <AddPinForm onAdd={addPin} userId={user.id} />}
         {tab==='profile' && <ProfilePage user={user} haveCount={haveCount} wantCount={wantCount} />}
       </div>
