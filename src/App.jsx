@@ -593,7 +593,7 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
     const book = books.find(b => b.id === selectedBook)
     if (!book) return
     for (const pid of selectedPins) {
-      await onAssignPin(pid, mode === 'add' ? book.id : null)
+      await onAssignPin(pid, book.id, mode === 'remove')
     }
     setSelectedPins([]); setMode('view')
   }
@@ -602,8 +602,8 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
   if (selectedBook) {
     const book = books.find(b => b.id === selectedBook)
     if (!book) { setSelectedBook(null); return null }
-    const bookPins = pins.filter(p => p.book_id === book.id)
-    const availablePins = pins.filter(p => !p.book_id)
+    const bookPins = pins.filter(p => (p.book_ids||[]).includes(book.id))
+    const availablePins = pins // ALL pins can be added
 
     if (mode === 'add' || mode === 'remove') {
       const pool = mode === 'add' ? availablePins : bookPins
@@ -767,7 +767,7 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
       ) : (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:12 }}>
           {books.map(book => {
-            const count = pins.filter(p => p.book_id === book.id).length
+            const count = pins.filter(p => (p.book_ids||[]).includes(book.id)).length
             return (
               <div key={book.id} onClick={() => { setSelectedBook(book.id); setMode('view'); setSelectedPins([]) }}
                 style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:16, padding:'18px 14px', cursor:'pointer', transition:'all .2s', position:'relative' }}
@@ -813,11 +813,19 @@ export default function App() {
 
   async function fetchAll(uid) {
     setPinsLoading(true)
-    const [pinsRes, booksRes] = await Promise.all([
+    const [pinsRes, booksRes, pinBooksRes] = await Promise.all([
       supabase.from('pins').select('*').eq('user_id', uid).order('created_at', { ascending:false }),
-      supabase.from('books').select('*').eq('user_id', uid).order('created_at', { ascending:true })
+      supabase.from('books').select('*').eq('user_id', uid).order('created_at', { ascending:true }),
+      supabase.from('pin_books').select('*')
     ])
-    setPins(pinsRes.data || [])
+    const pinsData = pinsRes.data || []
+    const pinBooksData = pinBooksRes.data || []
+    // Attach book_ids array to each pin
+    const pinsWithBooks = pinsData.map(p => ({
+      ...p,
+      book_ids: pinBooksData.filter(pb => pb.pin_id === p.id).map(pb => pb.book_id)
+    }))
+    setPins(pinsWithBooks)
     setBooks(booksRes.data || [])
     setPinsLoading(false)
   }
@@ -859,9 +867,14 @@ export default function App() {
     setBooks(prev => prev.map(b => b.id === id ? {...b, ...updates} : b))
   }
 
-  async function assignPin(pinId, bookId) {
-    await supabase.from('pins').update({ book_id: bookId }).eq('id', pinId)
-    setPins(prev => prev.map(p => p.id === pinId ? {...p, book_id: bookId} : p))
+  async function assignPin(pinId, bookId, remove = false) {
+    if (remove) {
+      await supabase.from('pin_books').delete().eq('pin_id', pinId).eq('book_id', bookId)
+      setPins(prev => prev.map(p => p.id === pinId ? {...p, book_ids: (p.book_ids||[]).filter(id => id !== bookId)} : p))
+    } else {
+      await supabase.from('pin_books').upsert({ pin_id: pinId, book_id: bookId })
+      setPins(prev => prev.map(p => p.id === pinId ? {...p, book_ids: [...new Set([...(p.book_ids||[]), bookId])]} : p))
+    }
   }
 
   if (!authChecked) return (
