@@ -283,7 +283,22 @@ function AddPinForm({ onAdd, userId }) {
     const reader = new FileReader()
     reader.onload = ev => {
       setPreview(ev.target.result)
-      identifyPin(ev.target.result)
+      // Compress image before sending to AI
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const maxSize = 800
+        let { width, height } = img
+        if (width > maxSize || height > maxSize) {
+          if (width > height) { height = (height / width) * maxSize; width = maxSize }
+          else { width = (width / height) * maxSize; height = maxSize }
+        }
+        canvas.width = width; canvas.height = height
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+        const compressed = canvas.toDataURL('image/jpeg', 0.8)
+        identifyPin(compressed)
+      }
+      img.src = ev.target.result
     }
     reader.readAsDataURL(file)
   }
