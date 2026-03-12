@@ -165,6 +165,46 @@ const css = `
 `
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
+// ── Reset Password Screen ─────────────────────────────────────────────────────
+function ResetPasswordScreen({ onDone }) {
+  const [pw, setPw] = useState('')
+  const [pw2, setPw2] = useState('')
+  const [error, setError] = useState('')
+  const [msg, setMsg] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function submit() {
+    if (pw.length < 6) { setError('Password must be at least 6 characters.'); return }
+    if (pw !== pw2) { setError('Passwords do not match.'); return }
+    setLoading(true); setError('')
+    try {
+      const { error } = await supabase.auth.updateUser({ password: pw })
+      if (error) throw error
+      setMsg('✅ Password updated! Signing you in...')
+      setTimeout(onDone, 1500)
+    } catch(e) { setError(e.message) }
+    setLoading(false)
+  }
+
+  return (
+    <div style={{ minHeight:'100vh', background:'linear-gradient(135deg,#0f0a1e,#1e1040,#0f172a)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+      <div className="fade-up" style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:24, padding:'44px 36px', width:'100%', maxWidth:420, textAlign:'center', boxShadow:'0 25px 60px rgba(0,0,0,0.6)' }}>
+        <div style={{ fontSize:60, marginBottom:8 }}>🔑</div>
+        <div style={{ fontSize:26, color:'#f9fafb', marginBottom:8, fontWeight:'bold' }}>Set New Password</div>
+        <div style={{ color:'#a78bfa', fontSize:13, marginBottom:28 }}>Choose a new password for your CastlePins account ✨</div>
+        <input className="field-input" type="password" placeholder="New password (min 6 chars)" value={pw} onChange={e => { setPw(e.target.value); setError('') }} />
+        <input className="field-input" type="password" placeholder="Confirm new password" value={pw2} onChange={e => { setPw2(e.target.value); setError('') }} onKeyDown={e => e.key==='Enter' && submit()} />
+        {error && <div style={{ color:'#f87171', fontSize:13, marginBottom:10, textAlign:'left' }}>⚠️ {error}</div>}
+        {msg && <div style={{ color:'#34d399', fontSize:13, marginBottom:10, textAlign:'left' }}>{msg}</div>}
+        <button className="primary-btn" onClick={submit} disabled={loading}
+          style={{ background:loading?'rgba(124,58,237,0.4)':'linear-gradient(135deg,#7c3aed,#db2777)', marginTop:6, fontSize:15 }}>
+          {loading ? '⏳ Updating...' : '🔑 Update Password'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function AuthScreen({ onLogin }) {
   const [email, setEmail] = useState('')
   const [pw, setPw] = useState('')
@@ -174,7 +214,20 @@ function AuthScreen({ onLogin }) {
   const [loading, setLoading] = useState(false)
 
   async function submit() {
-    if (!email.includes('@') || pw.length < 6) { setError('Valid email and password (min 6 chars) required.'); return }
+    if (!email.includes('@')) { setError('Please enter a valid email address.'); return }
+    if (mode === 'forgot') {
+      setLoading(true); setError('')
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin + '/?reset=true'
+        })
+        if (error) throw error
+        setMsg('✅ Password reset email sent! Check your inbox and follow the link.')
+      } catch(e) { setError(e.message) }
+      setLoading(false)
+      return
+    }
+    if (pw.length < 6) { setError('Password must be at least 6 characters.'); return }
     setLoading(true); setError('')
     try {
       if (mode === 'register') {
@@ -195,24 +248,52 @@ function AuthScreen({ onLogin }) {
     <div style={{ minHeight:'100vh', background:'linear-gradient(135deg,#0f0a1e,#1e1040,#0f172a)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
       <div className="fade-up" style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:24, padding:'44px 36px', width:'100%', maxWidth:420, textAlign:'center', boxShadow:'0 25px 60px rgba(0,0,0,0.6)' }}>
         <div style={{ fontSize:60, marginBottom:8 }}>🏰</div>
-        <div style={{ fontSize:32, color:'#f9fafb', letterSpacing:3, marginBottom:4, fontWeight:'bold' }}>PinVault</div>
+        <div style={{ fontSize:32, color:'#f9fafb', letterSpacing:3, marginBottom:4, fontWeight:'bold' }}>CastlePins</div>
         <div style={{ color:'#a78bfa', fontSize:13, marginBottom:28 }}>Your Disney Pin Collection ✨</div>
-        <div style={{ display:'flex', gap:8, marginBottom:20 }}>
-          {['login','register'].map(m => (
-            <button key={m} onClick={() => { setMode(m); setError(''); setMsg('') }}
-              style={{ flex:1, padding:'11px 0', border:`1px solid ${mode===m?'#7c3aed':'rgba(255,255,255,0.1)'}`, borderRadius:10, background:mode===m?'rgba(124,58,237,0.35)':'transparent', color:mode===m?'#e2d9f3':'#94a3b8', cursor:'pointer', fontSize:14, fontWeight:600 }}>
-              {m === 'login' ? 'Sign In' : 'Create Account'}
-            </button>
-          ))}
-        </div>
+
+        {mode !== 'forgot' && (
+          <div style={{ display:'flex', gap:8, marginBottom:20 }}>
+            {['login','register'].map(m => (
+              <button key={m} onClick={() => { setMode(m); setError(''); setMsg('') }}
+                style={{ flex:1, padding:'11px 0', border:`1px solid ${mode===m?'#7c3aed':'rgba(255,255,255,0.1)'}`, borderRadius:10, background:mode===m?'rgba(124,58,237,0.35)':'transparent', color:mode===m?'#e2d9f3':'#94a3b8', cursor:'pointer', fontSize:14, fontWeight:600 }}>
+                {m === 'login' ? 'Sign In' : 'Create Account'}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {mode === 'forgot' && (
+          <div style={{ color:'#a78bfa', fontSize:14, marginBottom:20 }}>
+            Enter your email and we'll send you a reset link 💌
+          </div>
+        )}
+
         <input className="field-input" type="email" placeholder="Email address" value={email} onChange={e => { setEmail(e.target.value); setError('') }} />
-        <input className="field-input" type="password" placeholder="Password (min 6 chars)" value={pw} onChange={e => { setPw(e.target.value); setError('') }} onKeyDown={e => e.key==='Enter' && submit()} />
+
+        {mode !== 'forgot' && (
+          <input className="field-input" type="password" placeholder="Password (min 6 chars)" value={pw} onChange={e => { setPw(e.target.value); setError('') }} onKeyDown={e => e.key==='Enter' && submit()} />
+        )}
+
         {error && <div style={{ color:'#f87171', fontSize:13, marginBottom:10, textAlign:'left' }}>⚠️ {error}</div>}
         {msg && <div style={{ color:'#34d399', fontSize:13, marginBottom:10, textAlign:'left', lineHeight:1.5 }}>{msg}</div>}
+
         <button className="primary-btn" onClick={submit} disabled={loading}
           style={{ background:loading?'rgba(124,58,237,0.4)':'linear-gradient(135deg,#7c3aed,#db2777)', marginTop:6, fontSize:15, letterSpacing:1 }}>
-          {loading ? '⏳ Please wait...' : mode==='login' ? '✨ Enter the Magic' : '🏰 Start My Collection'}
+          {loading ? '⏳ Please wait...' : mode==='login' ? '✨ Enter the Magic' : mode==='register' ? '🏰 Start My Collection' : '📧 Send Reset Link'}
         </button>
+
+        {mode === 'login' && (
+          <button onClick={() => { setMode('forgot'); setError(''); setMsg('') }}
+            style={{ background:'none', border:'none', color:'#7c3aed', cursor:'pointer', fontSize:13, marginTop:14, textDecoration:'underline' }}>
+            Forgot your password?
+          </button>
+        )}
+        {mode === 'forgot' && (
+          <button onClick={() => { setMode('login'); setError(''); setMsg('') }}
+            style={{ background:'none', border:'none', color:'#94a3b8', cursor:'pointer', fontSize:13, marginTop:14, textDecoration:'underline' }}>
+            ← Back to Sign In
+          </button>
+        )}
       </div>
     </div>
   )
@@ -490,7 +571,7 @@ function ProfilePage({ user, haveCount, wantCount }) {
           </div>
           <div>
             <div style={{ color:'#f1f5f9', fontWeight:'bold', fontSize:15 }}>{user.email}</div>
-            <div style={{ color:'#64748b', fontSize:12, marginTop:3 }}>🏰 PinVault Member</div>
+            <div style={{ color:'#64748b', fontSize:12, marginTop:3 }}>🏰 CastlePins Member</div>
           </div>
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:22 }}>
@@ -798,13 +879,15 @@ export default function App() {
   const [tab, setTab] = useState('have')
   const [pinsLoading, setPinsLoading] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
+  const [resetMode, setResetMode] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session?.user) { setUser(data.session.user); fetchAll(data.session.user.id) }
       setAuthChecked(true)
     })
-    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') { setResetMode(true); return }
       if (session?.user) { setUser(session.user); fetchAll(session.user.id) }
       else { setUser(null); setPins([]); setBooks([]) }
     })
@@ -879,10 +962,11 @@ export default function App() {
 
   if (!authChecked) return (
     <div style={{ minHeight:'100vh', background:'#0f0a1e', display:'flex', alignItems:'center', justifyContent:'center', color:'#a78bfa', fontSize:18 }}>
-      🏰 Loading PinVault...
+      🏰 Loading CastlePins...
     </div>
   )
 
+  if (resetMode) return <ResetPasswordScreen onDone={() => { setResetMode(false) }} />
   if (!user) return <AuthScreen onLogin={u => { setUser(u); fetchAll(u.id) }} />
 
   const haveCount = pins.filter(p => p.list==='have').length
@@ -904,7 +988,7 @@ export default function App() {
       <div className="top-nav">
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <span style={{ fontSize:26 }}>🏰</span>
-          <span style={{ fontSize:20, color:'#f9fafb', letterSpacing:3, fontWeight:'bold' }}>PinVault</span>
+          <span style={{ fontSize:20, color:'#f9fafb', letterSpacing:3, fontWeight:'bold' }}>CastlePins</span>
         </div>
         <div style={{ display:'flex', gap:4 }}>
           {navItems.map(t => (
@@ -927,7 +1011,7 @@ export default function App() {
       <div className="mobile-header">
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <span style={{ fontSize:22 }}>🏰</span>
-          <span style={{ fontSize:17, color:'#f9fafb', letterSpacing:2, fontWeight:'bold' }}>PinVault</span>
+          <span style={{ fontSize:17, color:'#f9fafb', letterSpacing:2, fontWeight:'bold' }}>CastlePins</span>
         </div>
         <div style={{ width:32, height:32, borderRadius:'50%', background:'linear-gradient(135deg,#7c3aed,#db2777)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:'bold', color:'#fff' }}>
           {user.email[0].toUpperCase()}
