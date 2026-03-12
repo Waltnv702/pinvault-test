@@ -291,10 +291,22 @@ function AddPinForm({ onAdd, userId }) {
   async function identifyPin(imageData) {
     setIdentifying(true); setError('')
     try {
-      const { data, error } = await supabase.functions.invoke('identify-pin', {
-        body: { image: imageData }
-      })
-      if (error) throw error
+      const response = await fetch(
+        'https://qgnfcznqcahasuclwqlm.supabase.co/functions/v1/identify-pin',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnbmZjem5xY2FoYXN1Y2x3cWxtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMzg4OTEsImV4cCI6MjA4ODgxNDg5MX0.iLTybAcv1zLQ_gWS123PfjRjE6eJUpoMWm8t_m3Gr_o`,
+          },
+          body: JSON.stringify({ image: imageData })
+        }
+      )
+      if (!response.ok) {
+        const errText = await response.text()
+        throw new Error(`Edge Function error: ${response.status} - ${errText}`)
+      }
+      const data = await response.json()
       if (data.found) {
         setName(data.name || '')
         setSeries(data.series || '')
