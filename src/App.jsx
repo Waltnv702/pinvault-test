@@ -300,7 +300,7 @@ function AuthScreen({ onLogin }) {
 }
 
 // ── Pin Card ──────────────────────────────────────────────────────────────────
-function PinCard({ pin, onDelete, onMove }) {
+function PinCard({ pin, onDelete, onMove, showDesc=true }) {
   const [hov, setHov] = useState(false)
   const bg = COLORS[hashCode(pin.id) % COLORS.length]
   return (
@@ -317,7 +317,7 @@ function PinCard({ pin, onDelete, onMove }) {
       <div style={{ padding:'10px 10px 10px' }}>
         <div className="card-name">{pin.name}</div>
         {pin.series && <div className="card-series">{pin.series}</div>}
-        <div className="card-desc">{pin.description}</div>
+        {showDesc && pin.description && <div className="card-desc">{pin.description}</div>}
         <div style={{ display:'flex', gap:6 }}>
           <button onClick={() => onMove(pin.id, pin.list==='have'?'want':'have')}
             style={{ flex:1, padding:'7px 0', border:'1px solid rgba(124,58,237,0.4)', borderRadius:7, background:'rgba(124,58,237,0.15)', color:'#c4b5fd', cursor:'pointer', fontSize:11, fontWeight:600 }}>
@@ -527,6 +527,7 @@ function AddPinForm({ onAdd, userId }) {
 // ── Pin List ──────────────────────────────────────────────────────────────────
 function PinList({ pins, listType, onDelete, onMove, loading }) {
   const [search, setSearch] = useState('')
+  const [showDesc, setShowDesc] = useState(true)
   const filtered = pins.filter(p => p.list===listType && (
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     (p.series||'').toLowerCase().includes(search.toLowerCase()) ||
@@ -534,7 +535,13 @@ function PinList({ pins, listType, onDelete, onMove, loading }) {
   ))
   return (
     <div className="fade-up">
-      <div className="page-title">{listType==='have'?'🎒 My Pin Collection':'⭐ My Wish List'}</div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:4 }}>
+        <div className="page-title" style={{ marginBottom:0 }}>{listType==='have'?'🎒 My Pin Collection':'⭐ My Wish List'}</div>
+        <button onClick={() => setShowDesc(v => !v)}
+          style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 10px', color: showDesc ? '#a78bfa' : '#64748b', cursor:'pointer', fontSize:11, fontWeight:600, whiteSpace:'nowrap' }}>
+          {showDesc ? '📝 Hide Desc' : '📝 Show Desc'}
+        </button>
+      </div>
       <div style={{ display:'inline-block', background:'rgba(124,58,237,0.3)', border:'1px solid rgba(124,58,237,0.5)', borderRadius:20, padding:'3px 14px', fontSize:12, color:'#c4b5fd', marginBottom:14, marginTop:4 }}>
         {loading ? 'Loading...' : `${filtered.length} pin${filtered.length!==1?'s':''}`}
       </div>
@@ -552,7 +559,7 @@ function PinList({ pins, listType, onDelete, onMove, loading }) {
         </div>
       ) : (
         <div className="pin-grid">
-          {filtered.map(pin => <PinCard key={pin.id} pin={pin} onDelete={onDelete} onMove={onMove} />)}
+          {filtered.map(pin => <PinCard key={pin.id} pin={pin} onDelete={onDelete} onMove={onMove} showDesc={showDesc} />)}
         </div>
       )}
     </div>
@@ -657,6 +664,7 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
   const [showIconPicker, setShowIconPicker] = useState(false)
   const [selectedPins, setSelectedPins] = useState([])
   const [mode, setMode] = useState('view') // 'view' | 'add' | 'remove'
+  const [showDesc, setShowDesc] = useState(false) // default OFF in books - descriptions can be long
 
   async function handleAdd() {
     if (!newName.trim()) return
@@ -770,6 +778,14 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
           )}
         </div>
 
+        {bookPins.length > 0 && (
+          <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:10 }}>
+            <button onClick={() => setShowDesc(v => !v)}
+              style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 10px', color: showDesc ? '#a78bfa' : '#64748b', cursor:'pointer', fontSize:11, fontWeight:600 }}>
+              {showDesc ? '📝 Hide Desc' : '📝 Show Desc'}
+            </button>
+          </div>
+        )}
         {bookPins.length === 0 ? (
           <div style={{ textAlign:'center', padding:'40px 0', color:'#64748b' }}>
             <div style={{ fontSize:40, marginBottom:10, opacity:.4 }}>{book.emoji}</div>
@@ -787,6 +803,7 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
                 <div style={{ padding:'8px 10px' }}>
                   <div className="card-name">{pin.name}</div>
                   {pin.series && <div className="card-series">{pin.series}</div>}
+                  {showDesc && pin.description && <div className="card-desc">{pin.description}</div>}
                 </div>
               </div>
             ))}
