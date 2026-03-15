@@ -1,9 +1,19 @@
 {
+  "version": 2,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "framework": null,
-  "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  "functions": {
+    "api/identify-pin.js":   { "maxDuration": 30 },
+    "api/create-checkout.js": { "maxDuration": 10 },
+    "api/stripe-webhook.js":  { "maxDuration": 10 },
+    "api/customer-portal.js": { "maxDuration": 10 }
+  },
+  "routes": [
+    { "src": "/api/identify-pin",    "dest": "/api/identify-pin.js" },
+    { "src": "/api/create-checkout", "dest": "/api/create-checkout.js" },
+    { "src": "/api/stripe-webhook",  "dest": "/api/stripe-webhook.js" },
+    { "src": "/api/customer-portal", "dest": "/api/customer-portal.js" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
