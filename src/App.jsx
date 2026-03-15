@@ -991,13 +991,14 @@ export default function App() {
 
   async function fetchAll(uid) {
     setPinsLoading(true)
-    const [pinsRes, booksRes, pinBooksRes, subRes, profileRes] = await Promise.all([
+    const [pinsRes, booksRes, pinBooksRes] = await Promise.all([
       supabase.from('pins').select('*').eq('user_id', uid).order('created_at', { ascending:false }),
       supabase.from('books').select('*').eq('user_id', uid).order('created_at', { ascending:true }),
       supabase.from('pin_books').select('*'),
-      supabase.from('subscriptions').select('*').eq('user_id', uid).single(),
-      supabase.from('profiles').select('is_admin').eq('id', uid).single(),
     ])
+    // Fetch subscription and profile separately to handle missing rows gracefully
+    const { data: subData } = await supabase.from('subscriptions').select('*').eq('user_id', uid).maybeSingle()
+    const { data: profileData } = await supabase.from('profiles').select('is_admin').eq('id', uid).maybeSingle()
     const pinsData = pinsRes.data || []
     const pinBooksData = pinBooksRes.data || []
     const pinsWithBooks = pinsData.map(p => ({
@@ -1007,8 +1008,8 @@ export default function App() {
     setPins(pinsWithBooks)
     setBooks(booksRes.data || [])
     setSubscription({
-      ...(subRes.data || {}),
-      is_admin: profileRes.data?.is_admin || false
+      ...(subData || {}),
+      is_admin: profileData?.is_admin || false
     })
     setPinsLoading(false)
   }
