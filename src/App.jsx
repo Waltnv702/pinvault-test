@@ -300,7 +300,7 @@ function AuthScreen({ onLogin }) {
 }
 
 // ── Pin Card ──────────────────────────────────────────────────────────────────
-function PinCard({ pin, onDelete, onMove, showDesc=true }) {
+function PinCard({ pin, onDelete, onMove, onToggleTrader, showDesc=true }) {
   const [hov, setHov] = useState(false)
   const bg = COLORS[hashCode(pin.id) % COLORS.length]
   return (
@@ -310,8 +310,15 @@ function PinCard({ pin, onDelete, onMove, showDesc=true }) {
         {pin.image_url
           ? <img src={pin.image_url} alt={pin.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e => e.target.style.display='none'} />
           : <span style={{ fontSize:36, opacity:.65 }}>📌</span>}
-        <div style={{ position:'absolute', top:6, right:6, background:'rgba(0,0,0,0.7)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:5, padding:'2px 6px', fontSize:9, fontWeight:'bold', color:'#e2d9f3', letterSpacing:1 }}>
-          {pin.list==='have'?'HAVE':'WANT'}
+        <div style={{ position:'absolute', top:6, right:6, display:'flex', gap:4 }}>
+          {pin.is_trader && (
+            <div style={{ background:'rgba(16,185,129,0.85)', border:'1px solid rgba(16,185,129,0.5)', borderRadius:5, padding:'2px 5px', fontSize:9, fontWeight:'bold', color:'#fff' }}>
+              TRADER
+            </div>
+          )}
+          <div style={{ background:'rgba(0,0,0,0.7)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:5, padding:'2px 6px', fontSize:9, fontWeight:'bold', color:'#e2d9f3', letterSpacing:1 }}>
+            {pin.list==='have'?'HAVE':'WANT'}
+          </div>
         </div>
       </div>
       <div style={{ padding:'10px 10px 10px' }}>
@@ -323,6 +330,11 @@ function PinCard({ pin, onDelete, onMove, showDesc=true }) {
             style={{ flex:1, padding:'7px 0', border:'1px solid rgba(124,58,237,0.4)', borderRadius:7, background:'rgba(124,58,237,0.15)', color:'#c4b5fd', cursor:'pointer', fontSize:11, fontWeight:600 }}>
             {pin.list==='have'?'→ Wish List':'→ Collection'}
           </button>
+          {onToggleTrader && (
+            <button onClick={() => onToggleTrader(pin.id, !pin.is_trader)}
+              title={pin.is_trader ? 'Remove from traders' : 'Mark as trader'}
+              style={{ width:28, height:28, border:`1px solid ${pin.is_trader?'rgba(16,185,129,0.4)':'rgba(255,255,255,0.15)'}`, borderRadius:7, background:pin.is_trader?'rgba(16,185,129,0.2)':'rgba(255,255,255,0.05)', color:pin.is_trader?'#34d399':'#64748b', cursor:'pointer', fontSize:12, flexShrink:0 }}>🤝</button>
+          )}
           <button onClick={() => onDelete(pin.id, pin.image_url)}
             style={{ width:28, height:28, border:'1px solid rgba(255,99,99,0.3)', borderRadius:7, background:'rgba(220,38,38,0.12)', color:'#f87171', cursor:'pointer', fontSize:12, fontWeight:'bold', flexShrink:0 }}>✕</button>
         </div>
@@ -543,7 +555,7 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade }) {
 }
 
 // ── Pin List ──────────────────────────────────────────────────────────────────
-function PinList({ pins, listType, onDelete, onMove, loading, userId }) {
+function PinList({ pins, listType, onDelete, onMove, onToggleTrader, loading, userId }) {
   const [search, setSearch] = useState('')
   const storageKey = `castlepins_showdesc_list_${userId}`
   const [showDesc, setShowDesc] = useState(() => {
@@ -587,7 +599,7 @@ function PinList({ pins, listType, onDelete, onMove, loading, userId }) {
         </div>
       ) : (
         <div className="pin-grid">
-          {filtered.map(pin => <PinCard key={pin.id} pin={pin} onDelete={onDelete} onMove={onMove} showDesc={showDesc} />)}
+          {filtered.map(pin => <PinCard key={pin.id} pin={pin} onDelete={onDelete} onMove={onMove} onToggleTrader={onToggleTrader} showDesc={showDesc} />)}
         </div>
       )}
     </div>
@@ -595,7 +607,7 @@ function PinList({ pins, listType, onDelete, onMove, loading, userId }) {
 }
 
 // ── Profile ───────────────────────────────────────────────────────────────────
-function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade }) {
+function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade, profile, onUpdateProfile }) {
   const isPaid = subscription?.status === 'active'
   const isAdmin = subscription?.is_admin === true
   const hasAccess = isPaid || isAdmin
@@ -672,6 +684,32 @@ function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade }) {
           </button>
         )}
 
+        {/* Trading opt-in */}
+        {hasAccess && (
+          <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:14, padding:'16px', marginBottom:12 }}>
+            <div style={{ fontSize:13, fontWeight:'bold', color:'#e2d9f3', marginBottom:6 }}>🤝 Pin Trading</div>
+            {!profile?.trading_enabled ? (
+              <>
+                <div style={{ fontSize:11, color:'#94a3b8', marginBottom:12, lineHeight:1.6 }}>
+                  Join the CastlePins trading community! Your email address (<span style={{color:'#a78bfa'}}>{user.email}</span>) may be shared with potential trade partners so they can contact you.
+                </div>
+                <button onClick={() => onUpdateProfile({ trading_enabled: true })}
+                  style={{ width:'100%', padding:'10px', borderRadius:10, border:'1px solid rgba(16,185,129,0.4)', background:'rgba(16,185,129,0.15)', color:'#34d399', cursor:'pointer', fontSize:13, fontWeight:'bold' }}>
+                  ✅ Enable Pin Trading
+                </button>
+              </>
+            ) : (
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                <div style={{ fontSize:12, color:'#34d399' }}>✅ Trading enabled</div>
+                <button onClick={() => onUpdateProfile({ trading_enabled: false })}
+                  style={{ padding:'5px 12px', borderRadius:8, border:'1px solid rgba(255,99,99,0.3)', background:'rgba(220,38,38,0.1)', color:'#f87171', cursor:'pointer', fontSize:11 }}>
+                  Disable
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <button onClick={() => supabase.auth.signOut()}
           style={{ width:'100%', padding:'14px', border:'1px solid rgba(255,99,99,0.3)', borderRadius:12, background:'rgba(220,38,38,0.1)', color:'#f87171', cursor:'pointer', fontSize:15, fontWeight:'bold' }}>
           Sign Out
@@ -732,6 +770,268 @@ function SelectablePinCard({ pin, selected, onToggle }) {
         <div className="card-name">{pin.name}</div>
         {pin.series && <div className="card-series">{pin.series}</div>}
       </div>
+    </div>
+  )
+}
+
+
+// ── Trading Page ──────────────────────────────────────────────────────────────
+function TradingPage({ user, pins, hasAccess, profile, onUpdateProfile, onUpgrade }) {
+  const [view, setView] = useState('browse') // 'browse' | 'trade_form'
+  const [traders, setTraders] = useState([])
+  const [search, setSearch] = useState('')
+  const [selectedTrader, setSelectedTrader] = useState(null)
+  const [traderPins, setTraderPins] = useState([])
+  const [loadingTraders, setLoadingTraders] = useState(false)
+  const [loadingTraderPins, setLoadingTraderPins] = useState(false)
+  // Trade form
+  const [wantPins, setWantPins] = useState([])   // pins from the other trader
+  const [offerPins, setOfferPins] = useState([]) // own trader pins to offer
+  const [comment, setComment] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sendMsg, setSendMsg] = useState('')
+  const [sendErr, setSendErr] = useState('')
+
+  const myTraderPins = pins.filter(p => p.is_trader)
+
+  useEffect(() => { fetchTraders() }, [])
+
+  async function fetchTraders() {
+    setLoadingTraders(true)
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, display_name, email, trading_enabled')
+      .eq('trading_enabled', true)
+      .neq('id', user.id)
+    setTraders(data || [])
+    setLoadingTraders(false)
+  }
+
+  async function selectTrader(trader) {
+    setSelectedTrader(trader)
+    setWantPins([]); setOfferPins([]); setComment(''); setSendMsg(''); setSendErr('')
+    setLoadingTraderPins(true)
+    const { data } = await supabase
+      .from('pins')
+      .select('*')
+      .eq('user_id', trader.id)
+      .eq('is_trader', true)
+    setTraderPins(data || [])
+    setLoadingTraderPins(false)
+    setView('trade_form')
+  }
+
+  async function sendTradeRequest() {
+    setSendErr('')
+    if (!selectedTrader) { setSendErr('Please select a trader.'); return }
+    if (wantPins.length === 0) { setSendErr('Select at least 1 pin you want.'); return }
+    if (offerPins.length === 0) { setSendErr('Select at least 1 pin to offer.'); return }
+    setSending(true)
+    try {
+      const { error } = await supabase.from('trade_requests').insert([{
+        from_user_id: user.id,
+        to_user_id: selectedTrader.id,
+        want_pin_ids: wantPins,
+        offer_pin_ids: offerPins,
+        comment: comment.trim() || null,
+        status: 'pending',
+      }])
+      if (error) throw error
+      setSendMsg('✅ Trade request sent!')
+      setTimeout(() => { setView('browse'); setSelectedTrader(null); setWantPins([]); setOfferPins([]); setComment(''); setSendMsg('') }, 2000)
+    } catch(e) { setSendErr(e.message) }
+    setSending(false)
+  }
+
+  function toggleWant(id) { setWantPins(p => p.includes(id) ? p.filter(x=>x!==id) : [...p, id]) }
+  function toggleOffer(id) { setOfferPins(p => p.includes(id) ? p.filter(x=>x!==id) : [...p, id]) }
+
+  const filteredTraders = traders.filter(t =>
+    (t.display_name||t.email||'').toLowerCase().includes(search.toLowerCase()) ||
+    (t.email||'').toLowerCase().includes(search.toLowerCase())
+  )
+
+  // ── Not subscribed ──
+  if (!hasAccess) return (
+    <div className="fade-up" style={{ textAlign:'center', padding:'40px 20px' }}>
+      <div style={{ fontSize:54, marginBottom:16 }}>🤝</div>
+      <div style={{ fontSize:20, fontWeight:'bold', color:'#f9fafb', marginBottom:8 }}>Pin Trading</div>
+      <div style={{ fontSize:13, color:'#94a3b8', marginBottom:24, lineHeight:1.6 }}>
+        Trade pins with collectors worldwide.<br/>Upgrade to Castle Pass to participate.
+      </div>
+      <div style={{ display:'flex', gap:8, justifyContent:'center' }}>
+        <button onClick={() => onUpgrade('monthly')}
+          style={{ padding:'10px 20px', borderRadius:10, border:'1px solid rgba(124,58,237,0.5)', background:'rgba(124,58,237,0.3)', color:'#e2d9f3', cursor:'pointer', fontSize:13, fontWeight:'bold' }}>
+          $4.99/mo
+        </button>
+        <button onClick={() => onUpgrade('annual')}
+          style={{ padding:'10px 20px', borderRadius:10, border:'1px solid rgba(219,39,119,0.5)', background:'rgba(219,39,119,0.3)', color:'#fce7f3', cursor:'pointer', fontSize:13, fontWeight:'bold' }}>
+          $44.99/yr 🔥
+        </button>
+      </div>
+    </div>
+  )
+
+  // ── Trading not enabled ──
+  if (!profile?.trading_enabled) return (
+    <div className="fade-up" style={{ textAlign:'center', padding:'40px 20px' }}>
+      <div style={{ fontSize:54, marginBottom:16 }}>🤝</div>
+      <div style={{ fontSize:20, fontWeight:'bold', color:'#f9fafb', marginBottom:8 }}>Pin Trading</div>
+      <div style={{ fontSize:13, color:'#94a3b8', marginBottom:8, lineHeight:1.6 }}>
+        To participate in trading, you need to enable it in your profile.
+      </div>
+      <div style={{ fontSize:11, color:'#64748b', marginBottom:24, lineHeight:1.6, maxWidth:320, margin:'0 auto 24px' }}>
+        Your email (<span style={{color:'#a78bfa'}}>{user.email}</span>) may be shared with trade partners so they can contact you.
+      </div>
+      <button onClick={() => onUpdateProfile({ trading_enabled: true })}
+        style={{ padding:'12px 28px', borderRadius:12, border:'1px solid rgba(16,185,129,0.4)', background:'rgba(16,185,129,0.2)', color:'#34d399', cursor:'pointer', fontSize:14, fontWeight:'bold' }}>
+        ✅ Enable Pin Trading
+      </button>
+    </div>
+  )
+
+  // ── No trader pins ──
+  if (myTraderPins.length === 0 && view !== 'trade_form') return (
+    <div className="fade-up" style={{ textAlign:'center', padding:'40px 20px' }}>
+      <div style={{ fontSize:54, marginBottom:16 }}>📌</div>
+      <div style={{ fontSize:20, fontWeight:'bold', color:'#f9fafb', marginBottom:8 }}>No Trader Pins Yet</div>
+      <div style={{ fontSize:13, color:'#94a3b8', lineHeight:1.6 }}>
+        Mark pins as traders using the 🤝 button on your Collection page to add them to your traders list.
+      </div>
+    </div>
+  )
+
+  // ── Trade form ──
+  if (view === 'trade_form' && selectedTrader) return (
+    <div className="fade-up">
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:20 }}>
+        <button onClick={() => { setView('browse'); setSelectedTrader(null) }}
+          style={{ background:'none', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:20, padding:0 }}>←</button>
+        <div className="page-title" style={{ marginBottom:0 }}>🤝 New Trade Request</div>
+      </div>
+
+      {/* Trader info */}
+      <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:14, padding:'14px', marginBottom:20 }}>
+        <div style={{ fontSize:11, color:'#a78bfa', fontWeight:'bold', marginBottom:4 }}>TRADING WITH</div>
+        <div style={{ color:'#f1f5f9', fontWeight:'bold' }}>{selectedTrader.display_name || selectedTrader.email}</div>
+      </div>
+
+      {/* Pins to receive */}
+      <div style={{ marginBottom:20 }}>
+        <div style={{ fontSize:12, fontWeight:'bold', color:'#a78bfa', marginBottom:10, letterSpacing:.5 }}>
+          PINS I WANT ({wantPins.length} selected)
+        </div>
+        {loadingTraderPins ? (
+          <div style={{ color:'#64748b', fontSize:13 }}>Loading their pins...</div>
+        ) : traderPins.length === 0 ? (
+          <div style={{ color:'#64748b', fontSize:13 }}>This trader has no trader pins listed.</div>
+        ) : (
+          <div className="pin-grid">
+            {traderPins.map(pin => (
+              <div key={pin.id} onClick={() => toggleWant(pin.id)}
+                style={{ background: wantPins.includes(pin.id) ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.04)', border:`1px solid ${wantPins.includes(pin.id)?'rgba(16,185,129,0.5)':'rgba(255,255,255,0.09)'}`, borderRadius:12, overflow:'hidden', cursor:'pointer', transition:'all .2s' }}>
+                <div style={{ height:80, background:COLORS[hashCode(pin.id)%COLORS.length], display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', position:'relative' }}>
+                  {pin.image_url ? <img src={pin.image_url} alt={pin.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <span style={{ fontSize:24, opacity:.6 }}>📌</span>}
+                  {wantPins.includes(pin.id) && <div style={{ position:'absolute', top:4, right:4, background:'rgba(16,185,129,0.9)', borderRadius:'50%', width:20, height:20, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11 }}>✓</div>}
+                </div>
+                <div style={{ padding:'6px 8px' }}>
+                  <div className="card-name" style={{ fontSize:11 }}>{pin.name}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Pins to offer */}
+      <div style={{ marginBottom:20 }}>
+        <div style={{ fontSize:12, fontWeight:'bold', color:'#db2777', marginBottom:10, letterSpacing:.5 }}>
+          PINS I OFFER ({offerPins.length} selected)
+        </div>
+        {myTraderPins.length === 0 ? (
+          <div style={{ color:'#64748b', fontSize:13 }}>You have no trader pins. Mark pins as traders from your Collection.</div>
+        ) : (
+          <div className="pin-grid">
+            {myTraderPins.map(pin => (
+              <div key={pin.id} onClick={() => toggleOffer(pin.id)}
+                style={{ background: offerPins.includes(pin.id) ? 'rgba(219,39,119,0.15)' : 'rgba(255,255,255,0.04)', border:`1px solid ${offerPins.includes(pin.id)?'rgba(219,39,119,0.5)':'rgba(255,255,255,0.09)'}`, borderRadius:12, overflow:'hidden', cursor:'pointer', transition:'all .2s' }}>
+                <div style={{ height:80, background:COLORS[hashCode(pin.id)%COLORS.length], display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', position:'relative' }}>
+                  {pin.image_url ? <img src={pin.image_url} alt={pin.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <span style={{ fontSize:24, opacity:.6 }}>📌</span>}
+                  {offerPins.includes(pin.id) && <div style={{ position:'absolute', top:4, right:4, background:'rgba(219,39,119,0.9)', borderRadius:'50%', width:20, height:20, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11 }}>✓</div>}
+                </div>
+                <div style={{ padding:'6px 8px' }}>
+                  <div className="card-name" style={{ fontSize:11 }}>{pin.name}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Comment */}
+      <div style={{ marginBottom:20 }}>
+        <div style={{ fontSize:12, fontWeight:'bold', color:'#a78bfa', marginBottom:8, letterSpacing:.5 }}>COMMENT (optional)</div>
+        <textarea value={comment} onChange={e => setComment(e.target.value)}
+          placeholder="Add a message to your trade request..."
+          style={{ width:'100%', minHeight:80, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:10, padding:'10px 12px', color:'#f1f5f9', fontSize:13, resize:'vertical', boxSizing:'border-box' }} />
+      </div>
+
+      {sendErr && <div style={{ color:'#f87171', fontSize:13, marginBottom:12 }}>⚠️ {sendErr}</div>}
+      {sendMsg && <div style={{ color:'#34d399', fontSize:13, marginBottom:12 }}>{sendMsg}</div>}
+
+      <div style={{ display:'flex', gap:10 }}>
+        <button onClick={sendTradeRequest} disabled={sending}
+          style={{ flex:1, padding:'14px', borderRadius:12, border:'none', background:sending?'rgba(16,185,129,0.3)':'linear-gradient(135deg,#059669,#0891b2)', color:'#fff', cursor:'pointer', fontSize:14, fontWeight:'bold' }}>
+          {sending ? '⏳ Sending...' : '🤝 Send Trade Request'}
+        </button>
+        <button onClick={() => { setView('browse'); setSelectedTrader(null) }}
+          style={{ padding:'14px 20px', borderRadius:12, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:14, fontWeight:'bold' }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+
+  // ── Browse traders ──
+  return (
+    <div className="fade-up">
+      <div className="page-title">🤝 Pin Trading</div>
+      <div style={{ fontSize:12, color:'#64748b', marginBottom:16 }}>
+        Your trader pins: <span style={{ color:'#34d399', fontWeight:'bold' }}>{myTraderPins.length}</span>
+      </div>
+
+      <input className="search-bar" placeholder="🔍 Search traders by name or email..."
+        value={search} onChange={e => setSearch(e.target.value)} />
+
+      {loadingTraders ? (
+        <div style={{ textAlign:'center', padding:'40px 0', color:'#64748b' }}>Loading traders...</div>
+      ) : filteredTraders.length === 0 ? (
+        <div style={{ textAlign:'center', padding:'40px 0' }}>
+          <div style={{ fontSize:40, marginBottom:12, opacity:.4 }}>🤝</div>
+          <div style={{ color:'#64748b', fontSize:14 }}>{search ? 'No traders match your search.' : 'No other traders yet — invite friends!'}</div>
+        </div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {filteredTraders.map(trader => (
+            <div key={trader.id}
+              style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:14, padding:'14px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                <div style={{ width:42, height:42, borderRadius:'50%', background:'linear-gradient(135deg,#7c3aed,#db2777)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, fontWeight:'bold', color:'#fff', flexShrink:0 }}>
+                  {(trader.display_name||trader.email||'?')[0].toUpperCase()}
+                </div>
+                <div>
+                  <div style={{ color:'#f1f5f9', fontWeight:'bold', fontSize:14 }}>{trader.display_name || trader.email}</div>
+                  <div style={{ color:'#64748b', fontSize:11, marginTop:2 }}>🤝 Active trader</div>
+                </div>
+              </div>
+              <button onClick={() => selectTrader(trader)}
+                style={{ padding:'8px 16px', borderRadius:10, border:'1px solid rgba(124,58,237,0.4)', background:'rgba(124,58,237,0.2)', color:'#c4b5fd', cursor:'pointer', fontSize:12, fontWeight:'bold', whiteSpace:'nowrap' }}>
+                Trade →
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -995,6 +1295,7 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false)
   const [resetMode, setResetMode] = useState(false)
   const [subscription, setSubscription] = useState(null)
+  const [profile, setProfile] = useState(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -1085,6 +1386,42 @@ export default function App() {
     } catch(e) { console.error('Upgrade error:', e) }
   }
 
+  async function toggleTrader(pinId, isTrader) {
+    await supabase.from('pins').update({ is_trader: isTrader }).eq('id', pinId)
+    setPins(prev => prev.map(p => p.id === pinId ? {...p, is_trader: isTrader} : p))
+    // Auto-create PinCastle Traders book if enabling trader and it doesn't exist
+    if (isTrader) {
+      const tradersBook = books.find(b => b.name === 'PinCastle Traders')
+      let bookId = tradersBook?.id
+      if (!bookId) {
+        const { data } = await supabase.from('books').insert([{
+          user_id: user.id, name: 'PinCastle Traders', emoji: '🤝', is_public: true, is_traders_book: true
+        }]).select().single()
+        if (data) { setBooks(prev => [...prev, data]); bookId = data.id }
+      }
+      if (bookId) {
+        await supabase.from('pin_books').upsert({ pin_id: pinId, book_id: bookId })
+        setPins(prev => prev.map(p => p.id === pinId ? {...p, book_ids: [...new Set([...(p.book_ids||[]), bookId])]} : p))
+      }
+    }
+  }
+
+  async function updateProfile(updates) {
+    const { data } = await supabase.from('profiles').upsert({
+      id: user.id,
+      email: user.email,
+      ...updates
+    }).select().single()
+    if (data) setProfile(data)
+    // Auto-create traders book when enabling trading
+    if (updates.trading_enabled && !books.find(b => b.name === 'PinCastle Traders')) {
+      const { data: book } = await supabase.from('books').insert([{
+        user_id: user.id, name: 'PinCastle Traders', emoji: '🤝', is_public: true, is_traders_book: true
+      }]).select().single()
+      if (book) setBooks(prev => [...prev, book])
+    }
+  }
+
   async function assignPin(pinId, bookId, remove = false) {
     if (remove) {
       await supabase.from('pin_books').delete().eq('pin_id', pinId).eq('book_id', bookId)
@@ -1112,6 +1449,7 @@ export default function App() {
     { id:'want',    icon:'⭐', label:'Wish List',  count:wantCount },
     { id:'books',   icon:'📚', label:'Books',      count:books.length > 0 ? books.length : null },
     { id:'add',     icon:'＋', label:'Add Pin' },
+    { id:'trade',   icon:'🤝', label:'Trade' },
     { id:'profile', icon:'👤', label:'Profile' },
   ]
 
@@ -1159,7 +1497,8 @@ export default function App() {
         {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} loading={pinsLoading} />}
         {tab==='books'   && <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} onUpdateBook={updateBook} hasAccess={hasAccess} onUpgrade={handleUpgrade} userId={user.id} />}
         {tab==='add'     && <AddPinForm onAdd={addPin} userId={user.id} hasAccess={hasAccess} onUpgrade={handleUpgrade} />}
-        {tab==='profile' && <ProfilePage user={user} haveCount={haveCount} wantCount={wantCount} subscription={subscription} onUpgrade={handleUpgrade} />}
+        {tab==='trade'   && <TradingPage user={user} pins={pins} hasAccess={hasAccess} profile={profile} onUpdateProfile={updateProfile} onUpgrade={handleUpgrade} />}
+        {tab==='profile' && <ProfilePage user={user} haveCount={haveCount} wantCount={wantCount} subscription={subscription} onUpgrade={handleUpgrade} profile={profile} onUpdateProfile={updateProfile} />}
       </div>
 
       {/* Mobile bottom nav */}
