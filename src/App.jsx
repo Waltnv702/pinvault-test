@@ -686,26 +686,32 @@ function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade, prof
 
         {/* Trading opt-in */}
         {hasAccess && (
-          <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:14, padding:'16px', marginBottom:12 }}>
+          <div style={{ background:'rgba(255,255,255,0.03)', border:`1px solid ${profile?.trading_enabled ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.09)'}`, borderRadius:14, padding:'16px', marginBottom:12 }}>
             <div style={{ fontSize:13, fontWeight:'bold', color:'#e2d9f3', marginBottom:6 }}>🤝 Pin Trading</div>
-            {!profile?.trading_enabled ? (
+            {profile?.trading_enabled ? (
+              <>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+                  <div style={{ width:10, height:10, borderRadius:'50%', background:'#34d399', flexShrink:0 }} />
+                  <div style={{ fontSize:13, color:'#34d399', fontWeight:'bold' }}>Active Pin Trader</div>
+                </div>
+                <div style={{ fontSize:11, color:'#64748b', marginBottom:12, lineHeight:1.5 }}>
+                  You are visible to other traders and can send and receive trade requests.
+                </div>
+                <button onClick={() => onUpdateProfile({ trading_enabled: false })}
+                  style={{ width:'100%', padding:'9px', borderRadius:10, border:'1px solid rgba(255,99,99,0.3)', background:'rgba(220,38,38,0.08)', color:'#f87171', cursor:'pointer', fontSize:12, fontWeight:'bold' }}>
+                  Disable Trading
+                </button>
+              </>
+            ) : (
               <>
                 <div style={{ fontSize:11, color:'#94a3b8', marginBottom:12, lineHeight:1.6 }}>
                   Join the CastlePins trading community! Your email address (<span style={{color:'#a78bfa'}}>{user.email}</span>) may be shared with potential trade partners so they can contact you.
                 </div>
                 <button onClick={() => onUpdateProfile({ trading_enabled: true })}
                   style={{ width:'100%', padding:'10px', borderRadius:10, border:'1px solid rgba(16,185,129,0.4)', background:'rgba(16,185,129,0.15)', color:'#34d399', cursor:'pointer', fontSize:13, fontWeight:'bold' }}>
-                  ✅ Enable Pin Trading
+                  ✅ Join Pin Trading Community
                 </button>
               </>
-            ) : (
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                <div style={{ fontSize:12, color:'#34d399' }}>✅ Trading enabled</div>
-                <button onClick={() => onUpdateProfile({ trading_enabled: false })}
-                  style={{ padding:'5px 12px', borderRadius:8, border:'1px solid rgba(255,99,99,0.3)', background:'rgba(220,38,38,0.1)', color:'#f87171', cursor:'pointer', fontSize:11 }}>
-                  Disable
-                </button>
-              </div>
             )}
           </div>
         )}
@@ -1198,7 +1204,10 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
                     : <span style={{ fontSize:28, opacity:.65 }}>📌</span>}
                 </div>
                 <div style={{ padding:'8px 10px' }}>
-                  <div className="card-name">{pin.name}</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}>
+                    <div className="card-name" style={{ marginBottom:0 }}>{pin.name}</div>
+                    {pin.is_trader && <span style={{ fontSize:9, fontWeight:'bold', color:'#34d399', background:'rgba(16,185,129,0.15)', border:'1px solid rgba(16,185,129,0.3)', borderRadius:4, padding:'1px 5px', flexShrink:0 }}>Trader</span>}
+                  </div>
                   {pin.series && <div className="card-series">{pin.series}</div>}
                   {showDesc && pin.description && <div className="card-desc">{pin.description}</div>}
                 </div>
