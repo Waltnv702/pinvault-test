@@ -332,7 +332,7 @@ function PinCard({ pin, onDelete, onMove, showDesc=true }) {
 }
 
 // ── Add Pin ───────────────────────────────────────────────────────────────────
-function AddPinForm({ onAdd, userId }) {
+function AddPinForm({ onAdd, userId, hasAccess, onUpgrade }) {
   const [name, setName] = useState('')
   const [series, setSeries] = useState('')
   const [desc, setDesc] = useState('')
@@ -445,11 +445,29 @@ function AddPinForm({ onAdd, userId }) {
           <span style={{ fontSize:22 }}>🤖</span>
           <div>
             <div style={{ color:'#e2d9f3', fontWeight:'bold', fontSize:14 }}>AI Pin Identifier</div>
-            <div style={{ color:'#a78bfa', fontSize:11 }}>Take a photo and Claude will identify your pin!</div>
+            <div style={{ color:'#a78bfa', fontSize:11 }}>
+              {hasAccess ? 'Take a photo and Claude will identify your pin!' : '✨ Castle Pass feature — upgrade to unlock!'}
+            </div>
           </div>
         </div>
 
-        {identifying ? (
+        {!hasAccess ? (
+          <div style={{ textAlign:'center', padding:'10px 0' }}>
+            <div style={{ fontSize:11, color:'#94a3b8', marginBottom:10 }}>
+              Instantly identify any Disney pin with AI — name, series, and description auto-filled.
+            </div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={() => onUpgrade('monthly')}
+                style={{ flex:1, padding:'9px 6px', borderRadius:10, border:'1px solid rgba(124,58,237,0.5)', background:'rgba(124,58,237,0.3)', color:'#e2d9f3', cursor:'pointer', fontSize:12, fontWeight:'bold' }}>
+                $4.99/mo
+              </button>
+              <button onClick={() => onUpgrade('annual')}
+                style={{ flex:1, padding:'9px 6px', borderRadius:10, border:'1px solid rgba(219,39,119,0.5)', background:'rgba(219,39,119,0.3)', color:'#fce7f3', cursor:'pointer', fontSize:12, fontWeight:'bold' }}>
+                $44.99/yr 🔥
+              </button>
+            </div>
+          </div>
+        ) : identifying ? (
           <div style={{ textAlign:'center', padding:'16px 0', color:'#a78bfa' }}>
             <div style={{ fontSize:28, marginBottom:8 }}>🔍</div>
             <div style={{ fontSize:13 }}>Claude is identifying your pin...</div>
@@ -567,20 +585,45 @@ function PinList({ pins, listType, onDelete, onMove, loading }) {
 }
 
 // ── Profile ───────────────────────────────────────────────────────────────────
-function ProfilePage({ user, haveCount, wantCount }) {
+function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade }) {
+  const isPaid = subscription?.status === 'active'
+  const isAdmin = subscription?.is_admin
+  const hasAccess = isPaid || isAdmin
+  const [portalLoading, setPortalLoading] = useState(false)
+
+  async function openPortal() {
+    if (!subscription?.stripe_customer_id) return
+    setPortalLoading(true)
+    try {
+      const res = await fetch('/api/customer-portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId: subscription.stripe_customer_id })
+      })
+      const { url } = await res.json()
+      window.location.href = url
+    } catch(e) { console.error(e) }
+    setPortalLoading(false)
+  }
+
   return (
     <div className="fade-up">
       <div className="page-title">👤 My Profile</div>
       <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:20, padding:'22px 18px', marginTop:16, maxWidth:420 }}>
+        {/* Avatar + email */}
         <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:22 }}>
           <div style={{ width:58, height:58, borderRadius:'50%', background:'linear-gradient(135deg,#7c3aed,#db2777)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, fontWeight:'bold', color:'#fff', flexShrink:0 }}>
             {user.email[0].toUpperCase()}
           </div>
           <div>
             <div style={{ color:'#f1f5f9', fontWeight:'bold', fontSize:15 }}>{user.email}</div>
-            <div style={{ color:'#64748b', fontSize:12, marginTop:3 }}>🏰 CastlePins Member</div>
+            <div style={{ color: hasAccess ? '#fde68a' : '#64748b', fontSize:12, marginTop:3 }}>
+              {isAdmin ? '👑 Admin' : hasAccess ? '✨ Castle Pass' : '🏰 Free Member'}
+            </div>
           </div>
         </div>
+
+        {/* Stats */}
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:22 }}>
           <div style={{ background:'rgba(124,58,237,0.15)', border:'1px solid rgba(124,58,237,0.3)', borderRadius:12, padding:'16px 12px', textAlign:'center' }}>
             <div style={{ fontSize:28, fontWeight:'bold', color:'#e2d9f3' }}>{haveCount}</div>
@@ -591,6 +634,34 @@ function ProfilePage({ user, haveCount, wantCount }) {
             <div style={{ fontSize:11, color:'#f9a8d4', marginTop:2 }}>⭐ On Wish List</div>
           </div>
         </div>
+
+        {/* Subscription status / upgrade */}
+        {!hasAccess && (
+          <div style={{ background:'linear-gradient(135deg,rgba(124,58,237,0.2),rgba(219,39,119,0.2))', border:'1px solid rgba(124,58,237,0.4)', borderRadius:14, padding:'18px', marginBottom:16 }}>
+            <div style={{ fontSize:16, fontWeight:'bold', color:'#f9fafb', marginBottom:6 }}>✨ Upgrade to Castle Pass</div>
+            <div style={{ fontSize:12, color:'#c4b5fd', marginBottom:14, lineHeight:1.6 }}>
+              Unlock AI pin identifier, unlimited pin books, and trading access.
+            </div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={() => onUpgrade('monthly')}
+                style={{ flex:1, padding:'10px 6px', borderRadius:10, border:'1px solid rgba(124,58,237,0.5)', background:'rgba(124,58,237,0.3)', color:'#e2d9f3', cursor:'pointer', fontSize:12, fontWeight:'bold' }}>
+                $4.99/mo
+              </button>
+              <button onClick={() => onUpgrade('annual')}
+                style={{ flex:1, padding:'10px 6px', borderRadius:10, border:'1px solid rgba(219,39,119,0.5)', background:'rgba(219,39,119,0.3)', color:'#fce7f3', cursor:'pointer', fontSize:12, fontWeight:'bold' }}>
+                $44.99/yr 🔥
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isPaid && !isAdmin && (
+          <button onClick={openPortal} disabled={portalLoading}
+            style={{ width:'100%', padding:'12px', border:'1px solid rgba(124,58,237,0.3)', borderRadius:12, background:'rgba(124,58,237,0.1)', color:'#c4b5fd', cursor:'pointer', fontSize:14, fontWeight:'bold', marginBottom:12 }}>
+            {portalLoading ? '⏳ Loading...' : '⚙️ Manage Subscription'}
+          </button>
+        )}
+
         <button onClick={() => supabase.auth.signOut()}
           style={{ width:'100%', padding:'14px', border:'1px solid rgba(255,99,99,0.3)', borderRadius:12, background:'rgba(220,38,38,0.1)', color:'#f87171', cursor:'pointer', fontSize:15, fontWeight:'bold' }}>
           Sign Out
@@ -655,7 +726,7 @@ function SelectablePinCard({ pin, selected, onToggle }) {
   )
 }
 
-function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdateBook }) {
+function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdateBook, hasAccess, onUpgrade }) {
   const [newName, setNewName] = useState('')
   const [newIcon, setNewIcon] = useState('🏰')
   const [newPublic, setNewPublic] = useState(true)
@@ -666,8 +737,14 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
   const [mode, setMode] = useState('view') // 'view' | 'add' | 'remove'
   const [showDesc, setShowDesc] = useState(false) // default OFF in books - descriptions can be long
 
+  const FREE_BOOK_LIMIT = 3
+
   async function handleAdd() {
     if (!newName.trim()) return
+    if (!hasAccess && books.length >= FREE_BOOK_LIMIT) {
+      alert('Free accounts can have up to 3 pin books. Upgrade to Castle Pass for unlimited books!')
+      return
+    }
     setAdding(true)
     await onAddBook({ name: newName.trim(), emoji: newIcon, is_public: newPublic })
     setNewName(''); setNewIcon('🏰'); setNewPublic(true); setShowIconPicker(false)
@@ -897,6 +974,7 @@ export default function App() {
   const [pinsLoading, setPinsLoading] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
   const [resetMode, setResetMode] = useState(false)
+  const [subscription, setSubscription] = useState(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -913,20 +991,25 @@ export default function App() {
 
   async function fetchAll(uid) {
     setPinsLoading(true)
-    const [pinsRes, booksRes, pinBooksRes] = await Promise.all([
+    const [pinsRes, booksRes, pinBooksRes, subRes, profileRes] = await Promise.all([
       supabase.from('pins').select('*').eq('user_id', uid).order('created_at', { ascending:false }),
       supabase.from('books').select('*').eq('user_id', uid).order('created_at', { ascending:true }),
-      supabase.from('pin_books').select('*')
+      supabase.from('pin_books').select('*'),
+      supabase.from('subscriptions').select('*').eq('user_id', uid).single(),
+      supabase.from('profiles').select('is_admin').eq('id', uid).single(),
     ])
     const pinsData = pinsRes.data || []
     const pinBooksData = pinBooksRes.data || []
-    // Attach book_ids array to each pin
     const pinsWithBooks = pinsData.map(p => ({
       ...p,
       book_ids: pinBooksData.filter(pb => pb.pin_id === p.id).map(pb => pb.book_id)
     }))
     setPins(pinsWithBooks)
     setBooks(booksRes.data || [])
+    setSubscription({
+      ...(subRes.data || {}),
+      is_admin: profileRes.data?.is_admin || false
+    })
     setPinsLoading(false)
   }
 
@@ -965,6 +1048,20 @@ export default function App() {
   async function updateBook(id, updates) {
     await supabase.from('books').update(updates).eq('id', id)
     setBooks(prev => prev.map(b => b.id === id ? {...b, ...updates} : b))
+  }
+
+  const hasAccess = subscription?.status === 'active' || subscription?.is_admin
+
+  async function handleUpgrade(plan) {
+    try {
+      const res = await fetch('/api/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan, userId: user.id, email: user.email })
+      })
+      const { url } = await res.json()
+      window.location.href = url
+    } catch(e) { console.error('Upgrade error:', e) }
   }
 
   async function assignPin(pinId, bookId, remove = false) {
@@ -1039,9 +1136,9 @@ export default function App() {
       <div className="main-content">
         {tab==='have'    && <PinList pins={pins} listType="have" onDelete={deletePin} onMove={movePin} loading={pinsLoading} />}
         {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} loading={pinsLoading} />}
-        {tab==='books'   && <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} onUpdateBook={updateBook} />}
-        {tab==='add'     && <AddPinForm onAdd={addPin} userId={user.id} />}
-        {tab==='profile' && <ProfilePage user={user} haveCount={haveCount} wantCount={wantCount} />}
+        {tab==='books'   && <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} onUpdateBook={updateBook} hasAccess={hasAccess} onUpgrade={handleUpgrade} />}
+        {tab==='add'     && <AddPinForm onAdd={addPin} userId={user.id} hasAccess={hasAccess} onUpgrade={handleUpgrade} />}
+        {tab==='profile' && <ProfilePage user={user} haveCount={haveCount} wantCount={wantCount} subscription={subscription} onUpgrade={handleUpgrade} />}
       </div>
 
       {/* Mobile bottom nav */}
