@@ -997,8 +997,11 @@ export default function App() {
       supabase.from('pin_books').select('*'),
     ])
     // Fetch subscription and profile separately to handle missing rows gracefully
-    const { data: subData } = await supabase.from('subscriptions').select('*').eq('user_id', uid).maybeSingle()
-    const { data: profileData } = await supabase.from('profiles').select('is_admin').eq('id', uid).maybeSingle()
+    const { data: subData, error: subErr } = await supabase.from('subscriptions').select('*').eq('user_id', uid).maybeSingle()
+    const { data: profileData, error: profileErr } = await supabase.from('profiles').select('is_admin').eq('id', uid).maybeSingle()
+    console.log('fetchAll uid:', uid)
+    console.log('subData:', subData, 'subErr:', subErr)
+    console.log('profileData:', profileData, 'profileErr:', profileErr)
     const pinsData = pinsRes.data || []
     const pinBooksData = pinBooksRes.data || []
     const pinsWithBooks = pinsData.map(p => ({
