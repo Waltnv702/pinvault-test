@@ -1054,7 +1054,8 @@ export default function App() {
     setBooks(prev => prev.map(b => b.id === id ? {...b, ...updates} : b))
   }
 
-  const hasAccess = subscription?.status === 'active' || subscription?.is_admin
+  const hasAccess = subscription?.status === 'active' || subscription?.is_admin === true
+  console.log('render subscription:', subscription, 'hasAccess:', hasAccess)
 
   async function handleUpgrade(plan) {
     try {
