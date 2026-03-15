@@ -543,9 +543,19 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade }) {
 }
 
 // ── Pin List ──────────────────────────────────────────────────────────────────
-function PinList({ pins, listType, onDelete, onMove, loading }) {
+function PinList({ pins, listType, onDelete, onMove, loading, userId }) {
   const [search, setSearch] = useState('')
-  const [showDesc, setShowDesc] = useState(true)
+  const storageKey = `castlepins_showdesc_list_${userId}`
+  const [showDesc, setShowDesc] = useState(() => {
+    const saved = localStorage.getItem(storageKey)
+    return saved === null ? true : saved === 'true'
+  })
+  function toggleDesc() {
+    setShowDesc(v => {
+      localStorage.setItem(storageKey, String(!v))
+      return !v
+    })
+  }
   const filtered = pins.filter(p => p.list===listType && (
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     (p.series||'').toLowerCase().includes(search.toLowerCase()) ||
@@ -555,7 +565,7 @@ function PinList({ pins, listType, onDelete, onMove, loading }) {
     <div className="fade-up">
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:4 }}>
         <div className="page-title" style={{ marginBottom:0 }}>{listType==='have'?'🎒 My Pin Collection':'⭐ My Wish List'}</div>
-        <button onClick={() => setShowDesc(v => !v)}
+        <button onClick={toggleDesc}
           style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 10px', color: showDesc ? '#a78bfa' : '#64748b', cursor:'pointer', fontSize:11, fontWeight:600, whiteSpace:'nowrap' }}>
           {showDesc ? '📝 Hide Desc' : '📝 Show Desc'}
         </button>
@@ -726,7 +736,7 @@ function SelectablePinCard({ pin, selected, onToggle }) {
   )
 }
 
-function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdateBook, hasAccess, onUpgrade }) {
+function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdateBook, hasAccess, onUpgrade, userId }) {
   const [newName, setNewName] = useState('')
   const [newIcon, setNewIcon] = useState('🏰')
   const [newPublic, setNewPublic] = useState(true)
@@ -735,7 +745,17 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
   const [showIconPicker, setShowIconPicker] = useState(false)
   const [selectedPins, setSelectedPins] = useState([])
   const [mode, setMode] = useState('view') // 'view' | 'add' | 'remove'
-  const [showDesc, setShowDesc] = useState(false) // default OFF in books - descriptions can be long
+  const storageKeyBooks = `castlepins_showdesc_books_${userId}`
+  const [showDesc, setShowDesc] = useState(() => {
+    const saved = localStorage.getItem(storageKeyBooks)
+    return saved === null ? false : saved === 'true' // default OFF in books
+  })
+  function toggleDescBooks() {
+    setShowDesc(v => {
+      localStorage.setItem(storageKeyBooks, String(!v))
+      return !v
+    })
+  }
 
   const FREE_BOOK_LIMIT = 3
 
@@ -857,7 +877,7 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
 
         {bookPins.length > 0 && (
           <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:10 }}>
-            <button onClick={() => setShowDesc(v => !v)}
+            <button onClick={toggleDescBooks}
               style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 10px', color: showDesc ? '#a78bfa' : '#64748b', cursor:'pointer', fontSize:11, fontWeight:600 }}>
               {showDesc ? '📝 Hide Desc' : '📝 Show Desc'}
             </button>
@@ -1137,7 +1157,7 @@ export default function App() {
       <div className="main-content">
         {tab==='have'    && <PinList pins={pins} listType="have" onDelete={deletePin} onMove={movePin} loading={pinsLoading} />}
         {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} loading={pinsLoading} />}
-        {tab==='books'   && <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} onUpdateBook={updateBook} hasAccess={hasAccess} onUpgrade={handleUpgrade} />}
+        {tab==='books'   && <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} onUpdateBook={updateBook} hasAccess={hasAccess} onUpgrade={handleUpgrade} userId={user.id} />}
         {tab==='add'     && <AddPinForm onAdd={addPin} userId={user.id} hasAccess={hasAccess} onUpgrade={handleUpgrade} />}
         {tab==='profile' && <ProfilePage user={user} haveCount={haveCount} wantCount={wantCount} subscription={subscription} onUpgrade={handleUpgrade} />}
       </div>
