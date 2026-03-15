@@ -612,6 +612,7 @@ function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade, prof
   const isAdmin = subscription?.is_admin === true
   const hasAccess = isPaid || isAdmin
   const [portalLoading, setPortalLoading] = useState(false)
+  console.log('ProfilePage profile:', profile)
 
   async function openPortal() {
     if (!subscription?.stripe_customer_id) return
