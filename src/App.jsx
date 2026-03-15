@@ -587,7 +587,7 @@ function PinList({ pins, listType, onDelete, onMove, loading }) {
 // ── Profile ───────────────────────────────────────────────────────────────────
 function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade }) {
   const isPaid = subscription?.status === 'active'
-  const isAdmin = subscription?.is_admin
+  const isAdmin = subscription?.is_admin === true
   const hasAccess = isPaid || isAdmin
   const [portalLoading, setPortalLoading] = useState(false)
 
@@ -999,9 +999,6 @@ export default function App() {
     // Fetch subscription and profile separately to handle missing rows gracefully
     const { data: subData, error: subErr } = await supabase.from('subscriptions').select('*').eq('user_id', uid).maybeSingle()
     const { data: profileData, error: profileErr } = await supabase.from('profiles').select('is_admin').eq('id', uid).maybeSingle()
-    console.log('fetchAll uid:', uid)
-    console.log('subData:', subData, 'subErr:', subErr)
-    console.log('profileData:', profileData, 'profileErr:', profileErr)
     const pinsData = pinsRes.data || []
     const pinBooksData = pinBooksRes.data || []
     const pinsWithBooks = pinsData.map(p => ({
@@ -1055,7 +1052,6 @@ export default function App() {
   }
 
   const hasAccess = subscription?.status === 'active' || subscription?.is_admin === true
-  console.log('render subscription:', subscription, 'hasAccess:', hasAccess)
 
   async function handleUpgrade(plan) {
     try {
