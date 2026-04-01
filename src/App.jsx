@@ -205,7 +205,113 @@ function ResetPasswordScreen({ onDone }) {
   )
 }
 
-function AuthScreen({ onLogin }) {
+// ── Legal Page ────────────────────────────────────────────────────────────────
+function LegalPage({ page, onBack }) {
+  const isTerms = page === 'terms'
+  return (
+    <div style={{ minHeight:'100vh', background:'linear-gradient(135deg,#0f0a1e,#1e1040,#0f172a)', padding:'20px' }}>
+      <div style={{ maxWidth:680, margin:'0 auto' }}>
+        {/* Header */}
+        <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:24, paddingTop:8 }}>
+          <button onClick={onBack}
+            style={{ background:'none', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:20, padding:0, flexShrink:0 }}>←</button>
+          <div>
+            <div style={{ fontSize:20, fontWeight:'bold', color:'#f9fafb' }}>
+              {isTerms ? '📋 Terms of Service' : '🔒 Privacy Policy'}
+            </div>
+            <div style={{ fontSize:11, color:'#64748b', marginTop:2 }}>CastlePins — Last updated: [INSERT DATE]</div>
+          </div>
+        </div>
+
+        <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:20, padding:'28px 24px' }}>
+
+          {isTerms ? (
+            <>
+              <Section title="1. Acceptance of Terms">
+                By creating an account or using CastlePins, you agree to be bound by these Terms of Service. If you do not agree, please do not use the App. We reserve the right to update these Terms at any time. Continued use after changes constitutes acceptance.
+              </Section>
+              <Section title="2. About CastlePins">
+                CastlePins is an application for cataloging, organizing, and trading physical Disney-themed collectible pins. CastlePins is not affiliated with, endorsed by, or sponsored by The Walt Disney Company or any of its subsidiaries. All Disney-related trademarks remain the property of their respective owners.
+              </Section>
+              <Section title="3. Eligibility">
+                You must be at least 13 years of age to use CastlePins. By using the App, you represent that all information you provide is accurate and that you have the legal capacity to enter into these Terms.
+              </Section>
+              <Section title="4. Accounts">
+                You are responsible for maintaining the confidentiality of your account credentials and for all activity that occurs under your account. Notify us immediately at support@castlepins.com of any unauthorized use.
+              </Section>
+              <Section title="5. Subscriptions and Payments">
+                CastlePins offers a free tier and a paid Castle Pass subscription ($4.99/month or $44.99/year). Subscriptions renew automatically and may be cancelled at any time. Payments are processed by Stripe, Inc. All fees are non-refundable except as required by law.
+              </Section>
+              <Section title="6. Pin Trading">
+                Trading features are available to Castle Pass subscribers who opt in. By opting in, you consent to your email address being shared with trade partners to facilitate trades. CastlePins is not a party to any trade and is not responsible for the condition, authenticity, delivery, or completion of traded items. You are solely responsible for any trade you enter into.
+              </Section>
+              <Section title="7. User Content">
+                You retain ownership of content you upload. By uploading, you grant CastlePins a license to display and store your content to operate the App. You agree not to upload unlawful, offensive, or infringing content.
+              </Section>
+              <Section title="8. AI Pin Identification">
+                The AI identifier is provided "as is" and may be inaccurate. CastlePins is not liable for decisions made based on AI-generated pin information.
+              </Section>
+              <Section title="9. Limitation of Liability">
+                TO THE MAXIMUM EXTENT PERMITTED BY LAW, CASTLEPINS SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES. OUR TOTAL LIABILITY SHALL NOT EXCEED THE AMOUNT YOU PAID US IN THE THREE MONTHS PRECEDING ANY CLAIM.
+              </Section>
+              <Section title="10. Governing Law">
+                These Terms are governed by the laws of the State of Nevada. Disputes shall be subject to the jurisdiction of courts in Clark County, Nevada.
+              </Section>
+              <Section title="11. Contact">
+                For questions about these Terms: support@castlepins.com
+              </Section>
+            </>
+          ) : (
+            <>
+              <Section title="1. Information We Collect">
+                We collect your email address, password (stored securely as a hash), optional display name, and pin collection data including photos you upload. Payment details are handled by Stripe and never stored by CastlePins.
+              </Section>
+              <Section title="2. How We Use Your Information">
+                We use your information to provide and improve the App, process payments, send transactional emails (such as password resets), facilitate pin trading, and respond to support requests.
+              </Section>
+              <Section title="3. Pin Trading and Email Sharing">
+                If you enable pin trading, your email address may be shared with users who initiate or receive trade requests with you. This is limited to trade partners and used solely to facilitate trades. You may disable trading at any time in your Profile settings.
+              </Section>
+              <Section title="4. Information We Share">
+                We do not sell your personal information. We share data only with Stripe (payments), Supabase (database), Vercel (hosting), and Anthropic (AI identification) — all governed by their own privacy policies — and with trade partners as described above.
+              </Section>
+              <Section title="5. Data Security">
+                Your data is stored securely using industry-standard encryption. While we take reasonable precautions, no internet transmission is 100% secure.
+              </Section>
+              <Section title="6. Your Rights">
+                You may access, update, or delete your account data at any time. To request account deletion, contact support@castlepins.com. We will process requests within 30 days.
+              </Section>
+              <Section title="7. Children's Privacy">
+                CastlePins is not directed to children under 13. We do not knowingly collect information from children under 13.
+              </Section>
+              <Section title="8. Changes to This Policy">
+                We may update this Privacy Policy and will notify you of significant changes within the App.
+              </Section>
+              <Section title="9. Contact">
+                For privacy questions: support@castlepins.com
+              </Section>
+            </>
+          )}
+        </div>
+
+        <div style={{ textAlign:'center', marginTop:20, marginBottom:40, color:'#475569', fontSize:11 }}>
+          CastlePins — Not affiliated with The Walt Disney Company
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Section({ title, children }) {
+  return (
+    <div style={{ marginBottom:22 }}>
+      <div style={{ fontSize:14, fontWeight:'bold', color:'#a78bfa', marginBottom:6 }}>{title}</div>
+      <div style={{ fontSize:13, color:'#cbd5e1', lineHeight:1.7 }}>{children}</div>
+    </div>
+  )
+}
+
+function AuthScreen({ onLogin, onLegal }) {
   const [email, setEmail] = useState('')
   const [pw, setPw] = useState('')
   const [mode, setMode] = useState('login')
@@ -287,6 +393,14 @@ function AuthScreen({ onLogin }) {
             style={{ background:'none', border:'none', color:'#7c3aed', cursor:'pointer', fontSize:13, marginTop:14, textDecoration:'underline' }}>
             Forgot your password?
           </button>
+        )}
+        {mode === 'register' && (
+          <div style={{ fontSize:11, color:'#64748b', marginTop:14, lineHeight:1.7, textAlign:'center' }}>
+            By creating an account you agree to our{' '}
+            <button onClick={() => onLegal('terms')} style={{ background:'none', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:11, padding:0, textDecoration:'underline' }}>Terms of Service</button>
+            {' '}and{' '}
+            <button onClick={() => onLegal('privacy')} style={{ background:'none', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:11, padding:0, textDecoration:'underline' }}>Privacy Policy</button>.
+          </div>
         )}
         {mode === 'forgot' && (
           <button onClick={() => { setMode('login'); setError(''); setMsg('') }}
@@ -607,7 +721,7 @@ function PinList({ pins, listType, onDelete, onMove, onToggleTrader, loading, us
 }
 
 // ── Profile ───────────────────────────────────────────────────────────────────
-function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade, profile, onUpdateProfile }) {
+function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade, profile, onUpdateProfile, onLegal }) {
   const isPaid = subscription?.status === 'active'
   const isAdmin = subscription?.is_admin === true
   const hasAccess = isPaid || isAdmin
@@ -706,7 +820,8 @@ function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade, prof
             ) : (
               <>
                 <div style={{ fontSize:11, color:'#94a3b8', marginBottom:12, lineHeight:1.6 }}>
-                  Join the CastlePins trading community! Your email address (<span style={{color:'#a78bfa'}}>{user.email}</span>) may be shared with potential trade partners so they can contact you.
+                  Join the CastlePins trading community! Your email address (<span style={{color:'#a78bfa'}}>{user.email}</span>) may be shared with potential trade partners so they can contact you. See our{' '}
+                  <button onClick={() => onLegal('privacy')} style={{ background:'none', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:11, padding:0, textDecoration:'underline' }}>Privacy Policy</button> for details.
                 </div>
                 <button onClick={() => onUpdateProfile({ trading_enabled: true })}
                   style={{ width:'100%', padding:'10px', borderRadius:10, border:'1px solid rgba(16,185,129,0.4)', background:'rgba(16,185,129,0.15)', color:'#34d399', cursor:'pointer', fontSize:13, fontWeight:'bold' }}>
@@ -716,6 +831,18 @@ function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade, prof
             )}
           </div>
         )}
+
+        {/* Legal links */}
+        <div style={{ display:'flex', justifyContent:'center', gap:16, marginBottom:12 }}>
+          <button onClick={() => onLegal('terms')}
+            style={{ background:'none', border:'none', color:'#475569', cursor:'pointer', fontSize:11, textDecoration:'underline' }}>
+            Terms of Service
+          </button>
+          <button onClick={() => onLegal('privacy')}
+            style={{ background:'none', border:'none', color:'#475569', cursor:'pointer', fontSize:11, textDecoration:'underline' }}>
+            Privacy Policy
+          </button>
+        </div>
 
         <button onClick={() => supabase.auth.signOut()}
           style={{ width:'100%', padding:'14px', border:'1px solid rgba(255,99,99,0.3)', borderRadius:12, background:'rgba(220,38,38,0.1)', color:'#f87171', cursor:'pointer', fontSize:15, fontWeight:'bold' }}>
@@ -783,7 +910,7 @@ function SelectablePinCard({ pin, selected, onToggle }) {
 
 
 // ── Trading Page ──────────────────────────────────────────────────────────────
-function TradingPage({ user, pins, hasAccess, profile, onUpdateProfile, onUpgrade }) {
+function TradingPage({ user, pins, hasAccess, profile, onUpdateProfile, onUpgrade, onLegal }) {
   const [view, setView] = useState('browse') // 'browse' | 'trade_form'
   const [traders, setTraders] = useState([])
   const [search, setSearch] = useState('')
@@ -888,7 +1015,8 @@ function TradingPage({ user, pins, hasAccess, profile, onUpdateProfile, onUpgrad
         To participate in trading, you need to enable it in your profile.
       </div>
       <div style={{ fontSize:11, color:'#64748b', marginBottom:24, lineHeight:1.6, maxWidth:320, margin:'0 auto 24px' }}>
-        Your email (<span style={{color:'#a78bfa'}}>{user.email}</span>) may be shared with trade partners so they can contact you.
+        Your email (<span style={{color:'#a78bfa'}}>{user.email}</span>) may be shared with trade partners so they can contact you. See our{' '}
+        <button onClick={() => onLegal && onLegal('privacy')} style={{ background:'none', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:11, padding:0, textDecoration:'underline' }}>Privacy Policy</button>.
       </div>
       <button onClick={() => onUpdateProfile({ trading_enabled: true })}
         style={{ padding:'12px 28px', borderRadius:12, border:'1px solid rgba(16,185,129,0.4)', background:'rgba(16,185,129,0.2)', color:'#34d399', cursor:'pointer', fontSize:14, fontWeight:'bold' }}>
@@ -1304,6 +1432,7 @@ export default function App() {
   const [pinsLoading, setPinsLoading] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
   const [resetMode, setResetMode] = useState(false)
+  const [legalPage, setLegalPage] = useState(null) // 'terms' | 'privacy' | null
   const [subscription, setSubscription] = useState(null)
   const [profile, setProfile] = useState(null)
 
@@ -1449,8 +1578,9 @@ export default function App() {
     </div>
   )
 
+  if (legalPage) return <LegalPage page={legalPage} onBack={() => setLegalPage(null)} />
   if (resetMode) return <ResetPasswordScreen onDone={() => { setResetMode(false) }} />
-  if (!user) return <AuthScreen onLogin={u => { setUser(u); fetchAll(u.id) }} />
+  if (!user) return <AuthScreen onLogin={u => { setUser(u); fetchAll(u.id) }} onLegal={setLegalPage} />
 
   const haveCount = pins.filter(p => p.list==='have').length
   const wantCount = pins.filter(p => p.list==='want').length
@@ -1508,8 +1638,8 @@ export default function App() {
         {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} onToggleTrader={toggleTrader} loading={pinsLoading} userId={user.id} />}
         {tab==='books'   && <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} onUpdateBook={updateBook} hasAccess={hasAccess} onUpgrade={handleUpgrade} userId={user.id} />}
         {tab==='add'     && <AddPinForm onAdd={addPin} userId={user.id} hasAccess={hasAccess} onUpgrade={handleUpgrade} />}
-        {tab==='trade'   && <TradingPage user={user} pins={pins} hasAccess={hasAccess} profile={profile} onUpdateProfile={updateProfile} onUpgrade={handleUpgrade} />}
-        {tab==='profile' && <ProfilePage user={user} haveCount={haveCount} wantCount={wantCount} subscription={subscription} onUpgrade={handleUpgrade} profile={profile} onUpdateProfile={updateProfile} />}
+        {tab==='trade'   && <TradingPage user={user} pins={pins} hasAccess={hasAccess} profile={profile} onUpdateProfile={updateProfile} onUpgrade={handleUpgrade} onLegal={setLegalPage} />}
+        {tab==='profile' && <ProfilePage user={user} haveCount={haveCount} wantCount={wantCount} subscription={subscription} onUpgrade={handleUpgrade} profile={profile} onUpdateProfile={updateProfile} onLegal={setLegalPage} />}
       </div>
 
       {/* Mobile bottom nav */}
