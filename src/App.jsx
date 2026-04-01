@@ -337,8 +337,15 @@ function AuthScreen({ onLogin, onLegal }) {
     setLoading(true); setError('')
     try {
       if (mode === 'register') {
-        const { error } = await supabase.auth.signUp({ email, password: pw })
+        const { data, error } = await supabase.auth.signUp({ email, password: pw })
         if (error) throw error
+        // Supabase silently "succeeds" for duplicate emails — detect it via empty identities
+        if (data?.user && data.user.identities && data.user.identities.length === 0) {
+          setError('An account with this email already exists. Please sign in or use "Forgot your password?" to reset it.')
+          setMode('login')
+          setLoading(false)
+          return
+        }
         setMsg('✅ Account created! Check your email to confirm, then sign in.')
         setMode('login')
       } else {
