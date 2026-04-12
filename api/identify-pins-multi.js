@@ -20,8 +20,8 @@ export default async function handler(req, res) {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 2000,
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4000,
         messages: [{
           role: 'user',
           content: [
@@ -31,28 +31,42 @@ export default async function handler(req, res) {
             },
             {
               type: 'text',
-              text: `You are a Disney pin expert. Examine this image and identify ALL Disney collectible pins you can see.
+              text: `You are a world-class Disney pin trading expert with deep knowledge of Disney collectible pins from all eras and parks worldwide (Walt Disney World, Disneyland, Tokyo Disney, Paris, Hong Kong, Shanghai).
 
-For each pin you can identify, provide:
-- name: the specific pin name or best description
-- series: the collection or series it belongs to (if known)
-- description: brief description of what's depicted (characters, theme, etc.)
+Carefully examine this image and identify EVERY Disney collectible pin you can see. Scan the entire image systematically — look at every pin, even partially visible ones at the edges.
+
+Disney pins typically feature:
+- Disney characters (Mickey, Minnie, princesses, villains, Pixar characters, Star Wars, Marvel, etc.)
+- Park attractions, landmarks, or logos
+- Limited edition markings (LE with edition size)
+- Hidden Mickey designs
+- Annual Passholder exclusives
+- Park-specific series (WDW, DL, EPCOT, Hollywood Studios, Animal Kingdom, etc.)
+- Special events (holidays, anniversaries, runDisney, D23, food & wine festivals)
+- Artist series or designer collaborations
+
+IMPORTANT RULES:
+- Identify EVERY pin visible, even if only partially visible
+- Always provide your BEST GUESS — a partial identification is better than skipping a pin
+- Be specific about characters, colors, and design elements you can see
+- Note if a pin appears to be Limited Edition (LE) if you can see edition markings
+- If you can see text on the pin, include it in the name or description
 
 Return ONLY a valid JSON object in this exact format, no other text:
 {
   "pins": [
     {
-      "name": "Pin name here",
-      "series": "Series name or empty string",
-      "description": "Description here"
+      "name": "Specific pin name or best character/theme description",
+      "series": "Series, collection, park name, or event — empty string if unknown",
+      "description": "Detailed description: characters shown, colors, design elements, any visible text or edition info"
     }
   ],
-  "count": 3,
-  "notes": "Any relevant notes about image quality or partial identifications"
+  "count": 5,
+  "notes": "Any notes about image quality, lighting, or partially obscured pins"
 }
 
-If you cannot identify any pins at all, return:
-{"pins": [], "count": 0, "notes": "Reason why"}`
+If no pins are visible at all:
+{"pins": [], "count": 0, "notes": "Explanation of why no pins could be identified"}`
             }
           ]
         }]

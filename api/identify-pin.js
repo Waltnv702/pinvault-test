@@ -3,25 +3,15 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end()
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ found: false, reason: `Method ${req.method} not allowed` })
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (req.method !== 'POST') return res.status(405).json({ found: false, reason: `Method ${req.method} not allowed` })
 
   try {
     const { image } = req.body
-
-    if (!image) {
-      return res.status(400).json({ found: false, reason: 'No image provided' })
-    }
+    if (!image) return res.status(400).json({ found: false, reason: 'No image provided' })
 
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
-    if (!ANTHROPIC_API_KEY) {
-      return res.status(500).json({ found: false, reason: 'API key not configured on server' })
-    }
+    if (!ANTHROPIC_API_KEY) return res.status(500).json({ found: false, reason: 'API key not configured on server' })
 
     const isUrl = image.startsWith('http')
     let mediaType = 'image/jpeg'
@@ -42,7 +32,7 @@ export default async function handler(req, res) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 1024,
         messages: [{
           role: 'user',
@@ -50,14 +40,28 @@ export default async function handler(req, res) {
             imageContent,
             {
               type: 'text',
-              text: `You are an expert on Disney pins and pin trading. Analyze this image and identify the Disney pin shown.
+              text: `You are a world-class Disney pin trading expert with deep knowledge of Disney collectible pins from all eras and parks worldwide (Walt Disney World, Disneyland, Tokyo Disney, Paris, Hong Kong, Shanghai).
+
+Analyze this image of a Disney collectible pin and identify it as specifically as possible.
+
+Disney pins typically feature:
+- Disney characters (Mickey, Minnie, princesses, villains, Pixar characters, Star Wars, Marvel, etc.)
+- Park attractions, landmarks, or logos
+- Limited edition markings (LE with edition size)
+- Hidden Mickey designs
+- Annual Passholder exclusives
+- Park-specific series (WDW, DL, EPCOT, etc.)
+- Special events (holidays, anniversaries, runDisney, D23)
+- Artist series or designer collaborations
+
+IMPORTANT: Always provide your BEST GUESS even if not 100% certain. It is better to give a partial identification than to say you cannot identify it. Only return found:false if the image contains no pin at all or is completely unrecognizable.
 
 Respond with ONLY a valid JSON object, no markdown, no extra text:
 
-If you can identify it:
-{"found":true,"name":"Full pin name","series":"Series or collection name","description":"Detailed description including characters, design, colors, edition details"}
+If you can identify or partially identify it:
+{"found":true,"name":"Full pin name or best description","series":"Series, collection, or park name","description":"Detailed description: characters shown, design elements, colors, any visible edition info, park or event association, approximate era if known"}
 
-If you cannot identify it:
+If the image contains no pin or is completely unrecognizable:
 {"found":false,"reason":"Brief explanation"}`
             }
           ]
