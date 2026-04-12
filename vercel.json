@@ -4,19 +4,21 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "functions": {
-    "api/identify-pin.js":    { "maxDuration": 30 },
-    "api/create-checkout.js": { "maxDuration": 10 },
-    "api/stripe-webhook.js":  { "maxDuration": 10 },
-    "api/customer-portal.js": { "maxDuration": 10 }
+    "api/identify-pin.js":        { "maxDuration": 30 },
+    "api/identify-pins-multi.js": { "maxDuration": 30 },
+    "api/create-checkout.js":     { "maxDuration": 10 },
+    "api/stripe-webhook.js":      { "maxDuration": 10 },
+    "api/customer-portal.js":     { "maxDuration": 10 }
   },
   "routes": [
-    { "src": "/api/identify-pin",    "dest": "/api/identify-pin.js" },
-    { "src": "/api/create-checkout", "dest": "/api/create-checkout.js" },
-    { "src": "/api/stripe-webhook",  "dest": "/api/stripe-webhook.js" },
-    { "src": "/api/customer-portal", "dest": "/api/customer-portal.js" },
-    { "src": "/sw.js",               "dest": "/sw.js" },
-    { "src": "/manifest.json",       "dest": "/manifest.json" },
+    { "src": "/api/identify-pin",        "dest": "/api/identify-pin.js" },
+    { "src": "/api/identify-pins-multi", "dest": "/api/identify-pins-multi.js" },
+    { "src": "/api/create-checkout",     "dest": "/api/create-checkout.js" },
+    { "src": "/api/stripe-webhook",      "dest": "/api/stripe-webhook.js" },
+    { "src": "/api/customer-portal",     "dest": "/api/customer-portal.js" },
+    { "src": "/sw.js",                   "dest": "/sw.js" },
+    { "src": "/manifest.json",           "dest": "/manifest.json" },
     { "handle": "filesystem" },
-    { "src": "/(.*)",                "dest": "/index.html" }
+    { "src": "/(.*)",                    "dest": "/index.html" }
   ]
 }
