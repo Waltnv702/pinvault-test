@@ -479,7 +479,7 @@ function MultiPinScanner({ onAddMultiple, userId, onClose }) {
       const img = new Image()
       img.onload = () => {
         const canvas = document.createElement('canvas')
-        const maxSize = 1200
+        const maxSize = 1600
         let { width, height } = img
         if (width > maxSize || height > maxSize) {
           if (width > height) { height = (height / width) * maxSize; width = maxSize }
@@ -722,7 +722,7 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
       const img = new Image()
       img.onload = () => {
         const canvas = document.createElement('canvas')
-        const maxSize = 800
+        const maxSize = 1000
         let { width, height } = img
         if (width > maxSize || height > maxSize) {
           if (width > height) { height = (height / width) * maxSize; width = maxSize }
