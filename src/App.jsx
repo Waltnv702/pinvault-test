@@ -458,7 +458,235 @@ function PinCard({ pin, onDelete, onMove, onToggleTrader, showDesc=true }) {
 }
 
 // ── Add Pin ───────────────────────────────────────────────────────────────────
-function AddPinForm({ onAdd, userId, hasAccess, onUpgrade }) {
+// ── Multi-Pin Scanner ─────────────────────────────────────────────────────────
+function MultiPinScanner({ onAddMultiple, userId, onClose }) {
+  const [scanning, setScanning] = useState(false)
+  const [preview, setPreview] = useState(null)
+  const [results, setResults] = useState(null)
+  const [confirmed, setConfirmed] = useState([])
+  const [editingIdx, setEditingIdx] = useState(null)
+  const [editData, setEditData] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+  const [list, setList] = useState('have')
+  const fileRef = useRef()
+
+  function compressAndScan(file) {
+    const reader = new FileReader()
+    reader.onload = ev => {
+      setPreview(ev.target.result)
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const maxSize = 1200
+        let { width, height } = img
+        if (width > maxSize || height > maxSize) {
+          if (width > height) { height = (height / width) * maxSize; width = maxSize }
+          else { width = (width / height) * maxSize; height = maxSize }
+        }
+        canvas.width = width; canvas.height = height
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+        scanPins(canvas.toDataURL('image/jpeg', 0.85))
+      }
+      img.src = ev.target.result
+    }
+    reader.readAsDataURL(file)
+  }
+
+  async function scanPins(imageData) {
+    setScanning(true); setError(''); setResults(null); setConfirmed([])
+    try {
+      const res = await fetch('/api/identify-pins-multi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: imageData })
+      })
+      if (!res.ok) throw new Error(`Server error: ${res.status}`)
+      const data = await res.json()
+      setResults(data)
+      setConfirmed(data.pins.map((_, i) => i))
+    } catch(e) {
+      setError('Scan failed: ' + e.message)
+    }
+    setScanning(false)
+  }
+
+  function togglePin(idx) {
+    setConfirmed(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx])
+  }
+
+  function startEdit(idx) {
+    setEditingIdx(idx)
+    setEditData({ ...results.pins[idx] })
+  }
+
+  function saveEdit() {
+    const updated = [...results.pins]
+    updated[editingIdx] = { ...editData }
+    setResults({ ...results, pins: updated })
+    setEditingIdx(null)
+  }
+
+  async function addConfirmed() {
+    if (confirmed.length === 0) return
+    setSaving(true)
+    const pinsToAdd = confirmed.map(i => results.pins[i])
+    await onAddMultiple(pinsToAdd, list)
+    setSaved(true)
+    setTimeout(() => {
+      setSaved(false); setResults(null); setPreview(null)
+      setConfirmed([]); if (fileRef.current) fileRef.current.value = ''
+    }, 2000)
+    setSaving(false)
+  }
+
+  return (
+    <div className="fade-up">
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:20 }}>
+        <button onClick={onClose}
+          style={{ background:'none', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:20, padding:0 }}>←</button>
+        <div className="page-title" style={{ marginBottom:0 }}>📷 Scan Multiple Pins</div>
+      </div>
+
+      {!results && !scanning && (
+        <>
+          <div style={{ background:'rgba(124,58,237,0.1)', border:'1px solid rgba(124,58,237,0.3)', borderRadius:14, padding:'14px 16px', marginBottom:20 }}>
+            <div style={{ fontSize:13, color:'#c4b5fd', lineHeight:1.7 }}>
+              📌 Lay your pins flat on a contrasting surface<br/>
+              💡 Good lighting makes a big difference<br/>
+              📐 Try to fit 3–10 pins per photo for best results
+            </div>
+          </div>
+          <label style={{ display:'block', textAlign:'center', padding:'20px', border:'2px dashed rgba(124,58,237,0.5)', borderRadius:14, color:'#c4b5fd', cursor:'pointer', fontSize:15, fontWeight:600, marginBottom:12 }}>
+            📷 Take Photo of Pins
+            <input ref={fileRef} type="file" accept="image/*" capture="environment"
+              style={{ display:'none' }} onChange={e => e.target.files[0] && compressAndScan(e.target.files[0])} />
+          </label>
+          <label style={{ display:'block', textAlign:'center', padding:'14px', border:'1px dashed rgba(255,255,255,0.2)', borderRadius:14, color:'#94a3b8', cursor:'pointer', fontSize:13, fontWeight:600 }}>
+            📁 Choose from Library
+            <input type="file" accept="image/*"
+              style={{ display:'none' }} onChange={e => e.target.files[0] && compressAndScan(e.target.files[0])} />
+          </label>
+        </>
+      )}
+
+      {scanning && (
+        <div style={{ textAlign:'center', padding:'50px 20px' }}>
+          <div style={{ fontSize:48, marginBottom:16 }}>🔍</div>
+          <div style={{ color:'#a78bfa', fontSize:16, fontWeight:'bold', marginBottom:8 }}>Scanning your pins...</div>
+          <div style={{ color:'#64748b', fontSize:13 }}>Claude is identifying each pin in your photo</div>
+        </div>
+      )}
+
+      {preview && results && (
+        <div style={{ marginBottom:16 }}>
+          <img src={preview} alt="Scanned pins"
+            style={{ width:'100%', maxHeight:200, objectFit:'cover', borderRadius:12, border:'1px solid rgba(255,255,255,0.1)' }} />
+        </div>
+      )}
+
+      {results && !scanning && (
+        <>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+            <div style={{ color:'#34d399', fontWeight:'bold', fontSize:15 }}>
+              ✅ Found {results.pins.length} pin{results.pins.length !== 1 ? 's' : ''}
+            </div>
+            <div style={{ fontSize:11, color:'#64748b' }}>{confirmed.length} selected</div>
+          </div>
+
+          {results.notes && (
+            <div style={{ fontSize:11, color:'#64748b', marginBottom:12, fontStyle:'italic' }}>💬 {results.notes}</div>
+          )}
+
+          {results.pins.length === 0 ? (
+            <div style={{ textAlign:'center', padding:'30px 0', color:'#64748b' }}>
+              No pins could be identified. Try a clearer photo with better lighting.
+              <br/>
+              <button onClick={() => { setResults(null); setPreview(null) }}
+                style={{ marginTop:14, padding:'8px 20px', borderRadius:10, border:'1px solid rgba(255,255,255,0.2)', background:'transparent', color:'#a78bfa', cursor:'pointer', fontSize:13 }}>
+                Try Again
+              </button>
+            </div>
+          ) : (
+            <>
+              <div style={{ display:'flex', gap:8, marginBottom:16 }}>
+                {['have','want'].map(l => (
+                  <button key={l} onClick={() => setList(l)}
+                    style={{ flex:1, padding:'9px', borderRadius:10, border:`1px solid ${list===l?'rgba(124,58,237,0.5)':'rgba(255,255,255,0.1)'}`, background:list===l?'rgba(124,58,237,0.25)':'transparent', color:list===l?'#e2d9f3':'#94a3b8', cursor:'pointer', fontSize:13, fontWeight:600 }}>
+                    {l === 'have' ? '🎒 Collection' : '⭐ Wish List'}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+                <button onClick={() => setConfirmed(results.pins.map((_,i) => i))}
+                  style={{ flex:1, padding:'6px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:11 }}>
+                  Select All
+                </button>
+                <button onClick={() => setConfirmed([])}
+                  style={{ flex:1, padding:'6px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:11 }}>
+                  Clear All
+                </button>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:20 }}>
+                {results.pins.map((pin, idx) => (
+                  <div key={idx}
+                    style={{ background:confirmed.includes(idx)?'rgba(124,58,237,0.12)':'rgba(255,255,255,0.03)', border:`1px solid ${confirmed.includes(idx)?'rgba(124,58,237,0.4)':'rgba(255,255,255,0.08)'}`, borderRadius:12, padding:'12px 14px', transition:'all .2s' }}>
+                    {editingIdx === idx ? (
+                      <div>
+                        <input value={editData.name} onChange={e => setEditData({...editData, name: e.target.value})}
+                          style={{ width:'100%', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.2)', borderRadius:8, padding:'6px 10px', color:'#f1f5f9', fontSize:13, marginBottom:6, boxSizing:'border-box' }}
+                          placeholder="Pin name" />
+                        <input value={editData.series || ''} onChange={e => setEditData({...editData, series: e.target.value})}
+                          style={{ width:'100%', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.2)', borderRadius:8, padding:'6px 10px', color:'#f1f5f9', fontSize:12, marginBottom:8, boxSizing:'border-box' }}
+                          placeholder="Series (optional)" />
+                        <div style={{ display:'flex', gap:8 }}>
+                          <button onClick={saveEdit}
+                            style={{ flex:1, padding:'6px', borderRadius:8, border:'none', background:'rgba(124,58,237,0.4)', color:'#e2d9f3', cursor:'pointer', fontSize:12, fontWeight:'bold' }}>Save</button>
+                          <button onClick={() => setEditingIdx(null)}
+                            style={{ padding:'6px 12px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:12 }}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                        <div onClick={() => togglePin(idx)}
+                          style={{ width:22, height:22, borderRadius:6, border:`2px solid ${confirmed.includes(idx)?'#7c3aed':'rgba(255,255,255,0.2)'}`, background:confirmed.includes(idx)?'rgba(124,58,237,0.5)':'transparent', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
+                          {confirmed.includes(idx) && <span style={{ color:'#fff', fontSize:13, fontWeight:'bold' }}>✓</span>}
+                        </div>
+                        <div style={{ flex:1, minWidth:0, cursor:'pointer' }} onClick={() => togglePin(idx)}>
+                          <div style={{ color:'#f1f5f9', fontWeight:'bold', fontSize:13 }}>{pin.name}</div>
+                          {pin.series && <div style={{ color:'#a78bfa', fontSize:11, marginTop:1 }}>{pin.series}</div>}
+                          {pin.description && <div style={{ color:'#64748b', fontSize:11, marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pin.description}</div>}
+                        </div>
+                        <button onClick={() => startEdit(idx)}
+                          style={{ background:'none', border:'none', color:'#475569', cursor:'pointer', fontSize:16, padding:'4px', flexShrink:0 }}>✏️</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {error && <div style={{ color:'#f87171', fontSize:13, marginBottom:12 }}>⚠️ {error}</div>}
+
+              <div style={{ display:'flex', gap:10 }}>
+                <button onClick={addConfirmed} disabled={saving || confirmed.length === 0 || saved}
+                  style={{ flex:1, padding:'14px', borderRadius:12, border:'none', background:saved?'linear-gradient(135deg,#059669,#0891b2)':confirmed.length===0?'rgba(255,255,255,0.1)':'linear-gradient(135deg,#7c3aed,#db2777)', color:confirmed.length===0?'#64748b':'#fff', cursor:confirmed.length===0?'default':'pointer', fontSize:14, fontWeight:'bold' }}>
+                  {saved ? `✅ ${confirmed.length} Pin${confirmed.length!==1?'s':''} Added!` : saving ? '⏳ Adding...' : `✨ Add ${confirmed.length} Pin${confirmed.length!==1?'s':''}`}
+                </button>
+                <button onClick={() => { setResults(null); setPreview(null); setConfirmed([]) }}
+                  style={{ padding:'14px 16px', borderRadius:12, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:13 }}>
+                  Rescan
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
   const [name, setName] = useState('')
   const [series, setSeries] = useState('')
   const [desc, setDesc] = useState('')
@@ -563,7 +791,15 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade }) {
 
   return (
     <div style={{ maxWidth:540 }} className="fade-up">
-      <div className="page-title" style={{ marginBottom:18 }}>✨ Add a New Pin</div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
+        <div className="page-title" style={{ marginBottom:0 }}>✨ Add a New Pin</div>
+        {hasAccess && (
+          <button onClick={onMultiScan}
+            style={{ padding:'7px 12px', borderRadius:10, border:'1px solid rgba(124,58,237,0.4)', background:'rgba(124,58,237,0.2)', color:'#c4b5fd', cursor:'pointer', fontSize:12, fontWeight:'bold', whiteSpace:'nowrap' }}>
+            📷 Scan Multiple
+          </button>
+        )}
+      </div>
 
       {/* AI Identifier Section */}
       <div style={{ background:'linear-gradient(135deg,rgba(124,58,237,0.15),rgba(219,39,119,0.15))', border:'1px solid rgba(124,58,237,0.4)', borderRadius:16, padding:'18px', marginBottom:18 }}>
@@ -1436,6 +1672,7 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false)
   const [resetMode, setResetMode] = useState(false)
   const [legalPage, setLegalPage] = useState(null) // 'terms' | 'privacy' | null
+  const [multiScan, setMultiScan] = useState(false)
   const [subscription, setSubscription] = useState(null)
   const [profile, setProfile] = useState(null)
 
@@ -1476,6 +1713,20 @@ export default function App() {
     })
     setProfile(profileData || { trading_enabled: false })
     setPinsLoading(false)
+  }
+
+  async function addMultiplePins(pinsData, list) {
+    for (const pin of pinsData) {
+      await supabase.from('pins').insert([{
+        name: pin.name.trim(),
+        series: (pin.series || '').trim(),
+        description: (pin.description || '').trim(),
+        list,
+        user_id: user.id,
+        image_url: null
+      }])
+    }
+    await fetchAll(user.id)
   }
 
   async function addPin(d) {
@@ -1643,7 +1894,7 @@ export default function App() {
         {tab==='have'    && <PinList pins={pins} listType="have" onDelete={deletePin} onMove={movePin} onToggleTrader={toggleTrader} loading={pinsLoading} userId={user.id} />}
         {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} onToggleTrader={toggleTrader} loading={pinsLoading} userId={user.id} />}
         {tab==='books'   && <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} onUpdateBook={updateBook} hasAccess={hasAccess} onUpgrade={handleUpgrade} userId={user.id} />}
-        {tab==='add'     && <AddPinForm onAdd={addPin} userId={user.id} hasAccess={hasAccess} onUpgrade={handleUpgrade} />}
+        {tab==='add'     && (multiScan && hasAccess ? <MultiPinScanner onAddMultiple={addMultiplePins} userId={user.id} onClose={() => setMultiScan(false)} /> : <AddPinForm onAdd={addPin} userId={user.id} hasAccess={hasAccess} onUpgrade={handleUpgrade} onMultiScan={() => setMultiScan(true)} />)}
         {tab==='trade'   && <TradingPage user={user} pins={pins} hasAccess={hasAccess} profile={profile} onUpdateProfile={updateProfile} onUpgrade={handleUpgrade} onLegal={setLegalPage} />}
         {tab==='profile' && <ProfilePage user={user} haveCount={haveCount} wantCount={wantCount} subscription={subscription} onUpgrade={handleUpgrade} profile={profile} onUpdateProfile={updateProfile} onLegal={setLegalPage} />}
       </div>
