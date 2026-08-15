@@ -46,102 +46,62 @@ export default async function handler(req, res) {
     const { image } = req.body
     if (!image) return res.status(400).json({ found: false, reason: 'No image provided' })
 
-    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
+    // Reverse image search requires a real public URL, not base64 —
+    // the frontend now uploads to Supabase Storage first and passes that URL here
+    if (!image.startsWith('http')) {
+      return res.status(400).json({ found: false, reason: 'A public image URL is required for reverse image search. Base64 images are no longer supported by this endpoint.' })
+    }
+
+    const SERPAPI_KEY = process.env.SERPAPI_KEY
     const EBAY_CLIENT_ID = process.env.EBAY_CLIENT_ID
     const EBAY_CLIENT_SECRET = process.env.EBAY_CLIENT_SECRET
 
-    if (!ANTHROPIC_API_KEY) return res.status(500).json({ found: false, reason: 'Anthropic API key not configured' })
+    if (!SERPAPI_KEY) return res.status(500).json({ found: false, reason: 'SerpAPI key not configured' })
     if (!EBAY_CLIENT_ID || !EBAY_CLIENT_SECRET) return res.status(500).json({ found: false, reason: 'eBay API not configured' })
 
-    // --- STEP 1: Claude vision describes the pin ---
-    const isUrl = image.startsWith('http')
-    let mediaType = 'image/jpeg'
-    if (!isUrl) {
-      if (image.includes('data:image/png')) mediaType = 'image/png'
-      else if (image.includes('data:image/webp')) mediaType = 'image/webp'
+    // --- STEP 1: Google Lens reverse image search ---
+    // This matches the actual pixels of the photo against images across the web,
+    // rather than asking an AI to guess a character name from a description.
+    const lensUrl = new URL('https://serpapi.com/search.json')
+    lensUrl.searchParams.set('engine', 'google_lens')
+    lensUrl.searchParams.set('url', image)
+    lensUrl.searchParams.set('api_key', SERPAPI_KEY)
+
+    const lensResponse = await fetch(lensUrl.toString())
+    if (!lensResponse.ok) {
+      const errText = await lensResponse.text()
+      return res.status(500).json({ found: false, reason: `Google Lens error: ${lensResponse.status} - ${errText}` })
     }
+    const lensData = await lensResponse.json()
 
-    const imageContent = isUrl
-      ? { type: 'image', source: { type: 'url', url: image } }
-      : { type: 'image', source: { type: 'base64', media_type: mediaType, data: image.replace(/^data:image\/\w+;base64,/, '') } }
+    // Google Lens returns "visual_matches" - real pages containing visually similar images
+    const visualMatches = (lensData.visual_matches || []).slice(0, 10)
 
-    const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
-        messages: [{
-          role: 'user',
-          content: [
-            imageContent,
-            {
-              type: 'text',
-              text: `You are a Disney pin trading expert. Analyze this Disney collectible pin image.
-
-Your job is to generate the best possible search query to find this exact pin on eBay — not to guess the final answer yourself.
-
-Focus on:
-1. Exact character name (be as specific as possible)
-2. What the character is doing or wearing
-3. Any visible text on the pin
-4. Pin shape (round, square, character-shaped)
-5. Any visible series markings, LE numbers, or edition info
-6. Park association if visible (WDW, DL, EPCOT, Tokyo, Paris etc)
-7. Color scheme and key visual elements
-8. Any event association (holiday, anniversary, D23 etc)
-
-Respond with ONLY a valid JSON object, no markdown, no extra text:
-
-{
-  "found": true,
-  "character": "Most specific character name you can identify",
-  "visual_elements": ["element1", "element2", "element3"],
-  "pin_shape": "shape description",
-  "visible_text": "any text you can read on the pin or null",
-  "park_association": "park name or null",
-  "event_association": "event name or null",
-  "search_query": "optimized 4-6 word eBay search query for finding this exact pin (do not include the word 'pin' more than once, keep it concise)",
-  "description": "2 sentence human readable description"
-}
-
-If image contains no pin: {"found": false, "reason": "explanation"}`
-            }
-          ]
-        }]
+    if (visualMatches.length === 0) {
+      return res.status(200).json({
+        found: false,
+        reason: 'No visual matches found for this photo. Try a clearer, closer photo with good lighting.'
       })
-    })
-
-    if (!claudeResponse.ok) {
-      const errText = await claudeResponse.text()
-      return res.status(500).json({ found: false, reason: `Claude API error: ${claudeResponse.status} - ${errText}` })
     }
 
-    const claudeData = await claudeResponse.json()
-    const text = claudeData.content?.[0]?.text?.trim() || ''
+    // Build our match list directly from Lens results (real photos, real titles, real links)
+    const matches = visualMatches.map(m => ({
+      title: m.title || '',
+      thumbnail: m.thumbnail || m.image || '',
+      link: m.link || '',
+      source: m.source || 'Web'
+    }))
 
-    let pinDescription
-    try {
-      const cleaned = text.replace(/```json\n?|\n?```/g, '').trim()
-      pinDescription = JSON.parse(cleaned)
-    } catch {
-      return res.status(500).json({ found: false, reason: 'Could not parse Claude response' })
-    }
-
-    if (!pinDescription.found) return res.status(200).json(pinDescription)
+    // Use the top match's title as our best-guess name/search anchor.
+    // This is a STARTING POINT for the user to confirm, not a final answer.
+    const bestGuessTitle = visualMatches[0]?.title || 'Disney pin'
 
     // --- STEP 2: Get eBay OAuth token ---
     const ebayToken = await getEbayToken(EBAY_CLIENT_ID, EBAY_CLIENT_SECRET)
 
-    // Build a broader, more forgiving search query — lean on park/series/visual terms
-    // rather than fully trusting Claude's character guess, which is often wrong.
-    // Keep it short: eBay's search can return zero results for overly long/specific strings.
-    const rawQuery = `Disney pin ${pinDescription.search_query}`.replace(/\s+/g, ' ').trim()
-    const searchQuery = rawQuery.split(' ').slice(0, 6).join(' ')
+    // --- STEP 3: Search eBay Browse API using the top visual match's title ---
+    // Keep it short — eBay's search can return zero results for long, over-specific strings
+    const searchQuery = `Disney pin ${bestGuessTitle}`.split(' ').slice(0, 8).join(' ')
     const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search')
     searchUrl.searchParams.set('q', searchQuery)
     searchUrl.searchParams.set('limit', '8')
@@ -154,48 +114,45 @@ If image contains no pin: {"found": false, "reason": "explanation"}`
       }
     })
 
-    if (!ebaySearchResponse.ok) {
-      const errText = await ebaySearchResponse.text()
-      return res.status(500).json({ found: false, reason: `eBay search error: ${ebaySearchResponse.status} - ${errText}`, debug_query: searchQuery, debug_url: searchUrl.toString() })
+    let ebayMatches = []
+    let valueResults = []
+    let valueEstimate = null
+
+    if (ebaySearchResponse.ok) {
+      const ebayData = await ebaySearchResponse.json()
+      const items = ebayData.itemSummaries || []
+
+      ebayMatches = items.slice(0, 8).map(item => ({
+        title: item.title,
+        thumbnail: item.image?.imageUrl || item.thumbnailImages?.[0]?.imageUrl || '',
+        link: item.itemWebUrl,
+        source: 'eBay',
+        price: item.price?.value ? `$${item.price.value}` : null,
+        condition: item.condition || null
+      }))
+
+      valueEstimate = estimateValueFromListings(items)
+      valueResults = items.slice(0, 5).map(item => ({
+        title: item.title,
+        snippet: item.condition ? `${item.condition} — $${item.price?.value || '?'}` : `$${item.price?.value || '?'}`,
+        link: item.itemWebUrl
+      }))
     }
+    // If eBay search fails for any reason, we still return the Lens matches below —
+    // visual identification is more important than pricing and shouldn't block on it
 
-    const ebayData = await ebaySearchResponse.json()
-    const items = ebayData.itemSummaries || []
-
-    // --- STEP 4: Format matches for the frontend (same shape as before) ---
-    const matches = items.slice(0, 8).map(item => ({
-      title: item.title,
-      thumbnail: item.image?.imageUrl || item.thumbnailImages?.[0]?.imageUrl || '',
-      link: item.itemWebUrl,
-      source: 'eBay',
-      price: item.price?.value ? `$${item.price.value}` : null,
-      condition: item.condition || null
-    }))
-
-    // --- STEP 5: Estimate value from real eBay listing prices ---
-    const valueEstimate = estimateValueFromListings(items)
-
-    const valueResults = items.slice(0, 5).map(item => ({
-      title: item.title,
-      snippet: item.condition ? `${item.condition} — $${item.price?.value || '?'}` : `$${item.price?.value || '?'}`,
-      link: item.itemWebUrl
-    }))
-
-    // --- STEP 6: Return everything to the frontend ---
+    // --- STEP 4: Return everything to the frontend ---
+    // "matches" = real visual matches (photos to confirm identity)
+    // "ebay_matches" = real eBay listings (for pricing / buying reference)
     return res.status(200).json({
       found: true,
-      character: pinDescription.character,
-      description: pinDescription.description,
-      visual_elements: pinDescription.visual_elements,
-      park_association: pinDescription.park_association,
-      visible_text: pinDescription.visible_text,
-      search_query: pinDescription.search_query,
+      character: bestGuessTitle,
+      description: `Best visual match: ${bestGuessTitle}`,
+      search_query: searchQuery,
       matches: matches,
+      ebay_matches: ebayMatches,
       value_results: valueResults,
-      value_estimate: valueEstimate,
-      debug_ebay_query: searchQuery,
-      debug_ebay_total: ebayData.total ?? null,
-      debug_ebay_raw_count: items.length
+      value_estimate: valueEstimate
     })
 
   } catch (err) {
