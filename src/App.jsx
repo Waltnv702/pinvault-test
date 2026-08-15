@@ -1786,8 +1786,7 @@ function AdminPinDatabase() {
   // Photo reference lookup (reverse image search) - also purely informational
   const [lensPreview, setLensPreview] = useState('')
   const [lensResults, setLensResults] = useState(null)
-  const [lensPriced, setLensPriced] = useState([])   // eBay listings with real prices, used for value calc
-  const [lensChecked, setLensChecked] = useState([]) // parallel array of booleans
+  const [lensChecked, setLensChecked] = useState([]) // parallel array of booleans, only meaningful for items with a price
   const [lensLoading, setLensLoading] = useState(false)
   const [lensError, setLensError] = useState('')
   const lensFileRef = useRef()
@@ -1795,7 +1794,7 @@ function AdminPinDatabase() {
   async function lookupByPhoto(e) {
     const file = e.target.files[0]
     if (!file) return
-    setLensLoading(true); setLensError(''); setLensResults(null); setLensPriced([]); setLensChecked([])
+    setLensLoading(true); setLensError(''); setLensResults(null); setLensChecked([])
     const reader = new FileReader()
     reader.onload = ev => setLensPreview(ev.target.result)
     reader.readAsDataURL(file)
@@ -1813,12 +1812,21 @@ function AdminPinDatabase() {
       })
       const data = await resp.json()
       if (!data.found) throw new Error(data.reason || 'No matches found')
-      setLensResults(data.matches || [])
-      const priced = (data.ebay_matches || [])
-        .map(m => ({ ...m, priceNum: parseFloat((m.price || '').replace(/[^0-9.]/g,'')) }))
-        .filter(m => !isNaN(m.priceNum))
-      setLensPriced(priced)
-      setLensChecked(priced.map(() => true))
+
+      let results = data.matches || []
+      const pricedCount = results.filter(m => typeof m.price === 'number').length
+
+      // If Lens found few/no priced items, fall back to the separate eBay search
+      // (still real listings, just not guaranteed to be pixel-matches of this exact pin)
+      if (pricedCount < 2 && (data.ebay_matches || []).length > 0) {
+        results = data.ebay_matches.map(m => ({
+          ...m,
+          price: parseFloat((m.price || '').replace(/[^0-9.]/g, '')) || null
+        }))
+      }
+
+      setLensResults(results)
+      setLensChecked(results.map(m => typeof m.price === 'number'))
     } catch (err) {
       setLensError(err.message)
     }
@@ -1936,7 +1944,10 @@ function AdminPinDatabase() {
   }
 
   function computeLensMedian() {
-    const active = lensPriced.filter((_, i) => lensChecked[i]).map(m => m.priceNum).sort((a,b) => a-b)
+    const active = (lensResults || [])
+      .filter((m, i) => lensChecked[i] && typeof m.price === 'number')
+      .map(m => m.price)
+      .sort((a,b) => a-b)
     if (active.length === 0) return null
     const mid = Math.floor(active.length / 2)
     return active.length % 2 !== 0 ? active[mid] : (active[mid-1] + active[mid]) / 2
@@ -2014,41 +2025,35 @@ function AdminPinDatabase() {
         )}
 
         {lensResults && lensResults.length > 0 && (
-          <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:220, overflowY:'auto', marginBottom: lensPriced.length > 0 ? 14 : 0 }}>
-            {lensResults.map((m, i) => (
-              <a key={i} href={m.link} target="_blank" rel="noopener noreferrer"
-                style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(255,255,255,0.04)', borderRadius:8, padding:8, textDecoration:'none' }}>
-                {m.thumbnail && <img src={m.thumbnail} alt="" style={{ width:36, height:36, borderRadius:6, objectFit:'contain', background:'rgba(255,255,255,0.06)', flexShrink:0 }} />}
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:11, color:'#e2e8f0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.title}</div>
-                  <div style={{ fontSize:10, color:'#64748b' }}>{m.source}</div>
-                </div>
-              </a>
-            ))}
-          </div>
-        )}
-
-        {lensPriced.length > 0 && (
           <>
-            <div style={{ fontSize:11, fontWeight:'bold', color:'#c4b5fd', marginBottom:6, borderTop:'1px solid rgba(255,255,255,0.1)', paddingTop:10 }}>Value calculation</div>
-            <div style={{ marginBottom:10 }}>
-              <div style={{ color:'#34d399', fontWeight:'bold', fontSize:12 }}>
-                💰 Est. value: ${computeLensMedian()?.toFixed(2) ?? '—'}
-                <span style={{ fontWeight:'normal', color:'#94a3b8' }}> (median of {lensChecked.filter(Boolean).length} checked listing{lensChecked.filter(Boolean).length===1?'':'s'})</span>
-              </div>
-              <div style={{ fontWeight:'normal', fontSize:9, color:'#64748b', marginTop:2 }}>Uncheck listings below to exclude them from the value calculation. Active eBay listing prices, not confirmed sold prices.</div>
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:260, overflowY:'auto' }}>
-              {lensPriced.map((m, i) => (
-                <div key={i} style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(255,255,255,0.04)', borderRadius:8, padding:8, opacity: lensChecked[i] ? 1 : 0.4 }}>
-                  <input type="checkbox" checked={lensChecked[i]} onChange={() => toggleLensChecked(i)} style={{ width:16, height:16, flexShrink:0, cursor:'pointer' }} />
-                  {m.thumbnail && <img src={m.thumbnail} alt="" style={{ width:36, height:36, borderRadius:6, objectFit:'contain', background:'rgba(255,255,255,0.06)', flexShrink:0 }} />}
-                  <a href={m.link} target="_blank" rel="noopener noreferrer" style={{ flex:1, minWidth:0, textDecoration:'none' }}>
-                    <div style={{ fontSize:11, color:'#e2e8f0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.title}</div>
-                    <div style={{ fontSize:11, color:'#34d399', fontWeight:'bold' }}>{m.price} {m.condition && <span style={{ color:'#64748b', fontWeight:'normal' }}>({m.condition})</span>}</div>
-                  </a>
+            {lensResults.some(m => typeof m.price === 'number') && (
+              <div style={{ marginBottom:10 }}>
+                <div style={{ color:'#34d399', fontWeight:'bold', fontSize:12 }}>
+                  💰 Est. value: ${computeLensMedian()?.toFixed(2) ?? '—'}
+                  <span style={{ fontWeight:'normal', color:'#94a3b8' }}> (median of {lensChecked.filter(Boolean).length} checked listing{lensChecked.filter(Boolean).length===1?'':'s'})</span>
                 </div>
-              ))}
+                <div style={{ fontWeight:'normal', fontSize:9, color:'#64748b', marginTop:2 }}>Uncheck listings below to exclude them from the value calculation. Active listing prices, not confirmed sold prices.</div>
+              </div>
+            )}
+            <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:320, overflowY:'auto' }}>
+              {lensResults.map((m, i) => {
+                const hasPrice = typeof m.price === 'number'
+                return (
+                  <div key={i} style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(255,255,255,0.04)', borderRadius:8, padding:8, opacity: hasPrice && !lensChecked[i] ? 0.4 : 1 }}>
+                    {hasPrice
+                      ? <input type="checkbox" checked={lensChecked[i]} onChange={() => toggleLensChecked(i)} style={{ width:16, height:16, flexShrink:0, cursor:'pointer' }} />
+                      : <div style={{ width:16, flexShrink:0 }} />
+                    }
+                    {m.thumbnail && <img src={m.thumbnail} alt="" style={{ width:36, height:36, borderRadius:6, objectFit:'contain', background:'rgba(255,255,255,0.06)', flexShrink:0 }} />}
+                    <a href={m.link} target="_blank" rel="noopener noreferrer" style={{ flex:1, minWidth:0, textDecoration:'none' }}>
+                      <div style={{ fontSize:11, color:'#e2e8f0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.title}</div>
+                      <div style={{ fontSize:10, color: hasPrice ? '#34d399' : '#64748b', fontWeight: hasPrice ? 'bold' : 'normal' }}>
+                        {hasPrice ? `$${m.price.toFixed(2)}` : m.source}
+                      </div>
+                    </a>
+                  </div>
+                )
+              })}
             </div>
           </>
         )}
@@ -2160,7 +2165,7 @@ function AdminPinDatabase() {
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState(null)
-  const ADMIN_EMAIL = 'waltnv702@gmail.com' // replace with your login email
+  const ADMIN_EMAIL = 'YOUR-EMAIL-HERE' // replace with your login email
   const [pins, setPins] = useState([])
   const [books, setBooks] = useState([])
   const [tab, setTab] = useState('have')
