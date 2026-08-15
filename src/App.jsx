@@ -699,6 +699,9 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
   const [error, setError] = useState('')
   const [identifying, setIdentifying] = useState(false)
   const [identified, setIdentified] = useState(false)
+  const [matches, setMatches] = useState([])
+  const [showMatches, setShowMatches] = useState(false)
+  const [aiGuess, setAiGuess] = useState(null)
   const fileRef = useRef()
   const aiRef = useRef()
 
@@ -739,7 +742,7 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
   }
 
   async function identifyPin(imageData) {
-    setIdentifying(true); setError('')
+    setIdentifying(true); setError(''); setMatches([]); setShowMatches(false)
     try {
       const response = await fetch('/api/identify-pin', {
         method: 'POST',
@@ -752,10 +755,23 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
       }
       const data = await response.json()
       if (data.found) {
-        setName(data.name || '')
-        setSeries(data.series || '')
-        setDesc(data.description || '')
-        setIdentified(true)
+        // Claude's guess — used as a fallback and as pre-fill, NOT trusted blindly
+        setAiGuess({
+          character: data.character || data.name || '',
+          series: data.park_association || data.series || '',
+          description: data.description || ''
+        })
+        if (data.matches && data.matches.length > 0) {
+          // Real photos found — let the user pick the correct one instead of guessing
+          setMatches(data.matches)
+          setShowMatches(true)
+        } else {
+          // No real matches came back — fall back to Claude's guess directly
+          setName(data.character || data.name || '')
+          setSeries(data.park_association || data.series || '')
+          setDesc(data.description || '')
+          setIdentified(true)
+        }
       } else {
         setError(`Could not identify pin: ${data.reason || 'Please fill in details manually'}`)
       }
@@ -763,6 +779,22 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
       setError('AI identification failed: ' + e.message)
     }
     setIdentifying(false)
+  }
+
+  function pickMatch(match) {
+    setName(match.title || aiGuess?.character || '')
+    setSeries(aiGuess?.series || '')
+    setDesc(aiGuess?.description || '')
+    setShowMatches(false)
+    setIdentified(true)
+  }
+
+  function useAiGuessInstead() {
+    setName(aiGuess?.character || '')
+    setSeries(aiGuess?.series || '')
+    setDesc(aiGuess?.description || '')
+    setShowMatches(false)
+    setIdentified(true)
   }
 
   async function submit() {
@@ -833,6 +865,33 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
           <div style={{ textAlign:'center', padding:'16px 0', color:'#a78bfa' }}>
             <div style={{ fontSize:28, marginBottom:8 }}>🔍</div>
             <div style={{ fontSize:13 }}>Claude is identifying your pin...</div>
+          </div>
+        ) : showMatches ? (
+          <div style={{ padding:'6px 0' }}>
+            <div style={{ fontSize:12, color:'#c4b5fd', marginBottom:10, textAlign:'center' }}>
+              Claude's best guess: <strong>{aiGuess?.character}</strong> — but pick the real match below if you see it 👇
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, marginBottom:12 }}>
+              {matches.map((m, i) => (
+                <button key={i} onClick={() => pickMatch(m)}
+                  style={{ padding:0, border:'1px solid rgba(255,255,255,0.15)', borderRadius:10, overflow:'hidden', background:'rgba(255,255,255,0.04)', cursor:'pointer', textAlign:'left' }}>
+                  <img src={m.thumbnail} alt={m.title} style={{ width:'100%', height:70, objectFit:'cover', display:'block' }} />
+                  <div style={{ padding:'4px 6px', fontSize:9, color:'#94a3b8', lineHeight:1.3, maxHeight:32, overflow:'hidden' }}>
+                    {m.title}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={useAiGuessInstead}
+                style={{ flex:1, padding:'8px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:11 }}>
+                None match — use AI guess
+              </button>
+              <button onClick={() => { setShowMatches(false); setMatches([]); if(aiRef.current) aiRef.current.value='' }}
+                style={{ flex:1, padding:'8px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:11 }}>
+                Try another photo
+              </button>
+            </div>
           </div>
         ) : identified ? (
           <div style={{ textAlign:'center', padding:'10px 0' }}>
