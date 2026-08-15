@@ -1770,8 +1770,21 @@ function AdminPinDatabase() {
   const [form, setForm] = useState(emptyDbForm)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [imageFile, setImageFile] = useState(null)
+  const [preview, setPreview] = useState('')
   const [error, setError] = useState('')
   const [msg, setMsg] = useState('')
+  const fileRef = useRef()
+
+  async function handleFile(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setImageFile(file)
+    const reader = new FileReader()
+    reader.onload = ev => setPreview(ev.target.result)
+    reader.readAsDataURL(file)
+  }
 
   async function load() {
     setLoading(true)
@@ -1789,15 +1802,39 @@ function AdminPinDatabase() {
       estimated_value: row.estimated_value ?? '', image_url: row.image_url || '',
       description: row.description || '', source_link: row.source_link || ''
     })
+    setImageFile(null); setPreview(row.image_url || '')
     setEditing(true); setMsg(''); setError('')
     window.scrollTo({ top:0, behavior:'smooth' })
   }
 
-  function resetForm() { setForm(emptyDbForm); setEditing(false) }
+  function resetForm() {
+    setForm(emptyDbForm); setEditing(false)
+    setImageFile(null); setPreview('')
+    if (fileRef.current) fileRef.current.value = ''
+  }
 
   async function save() {
     if (!form.name.trim()) { setError('Pin name is required.'); return }
     setSaving(true); setError(''); setMsg('')
+
+    let finalImageUrl = form.image_url.trim() || null
+
+    if (imageFile) {
+      setUploading(true)
+      try {
+        const path = `db/${Date.now()}-${imageFile.name.replace(/\s+/g,'_')}`
+        const { error: upErr } = await supabase.storage.from('pin-images').upload(path, imageFile)
+        if (upErr) throw upErr
+        const { data } = supabase.storage.from('pin-images').getPublicUrl(path)
+        finalImageUrl = data.publicUrl
+      } catch (err) {
+        setUploading(false); setSaving(false)
+        setError('Image upload failed: ' + err.message)
+        return
+      }
+      setUploading(false)
+    }
+
     const payload = {
       name: form.name.trim(),
       series: form.series.trim() || null,
@@ -1805,7 +1842,7 @@ function AdminPinDatabase() {
       release_year: form.release_year ? parseInt(form.release_year) : null,
       edition_size: form.edition_size.trim() || null,
       estimated_value: form.estimated_value !== '' ? parseFloat(form.estimated_value) : null,
-      image_url: form.image_url.trim() || null,
+      image_url: finalImageUrl,
       description: form.description.trim() || null,
       source_link: form.source_link.trim() || null,
       updated_at: new Date().toISOString()
@@ -1874,8 +1911,21 @@ function AdminPinDatabase() {
           </div>
         </div>
 
-        <label style={labelStyle}>Image URL</label>
-        <input style={inputStyle} value={form.image_url} onChange={e => setForm({...form, image_url:e.target.value})} placeholder="https://..." />
+        <label style={labelStyle}>Photo</label>
+        <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:8 }}>
+          {preview && (
+            <img src={preview} alt="preview" style={{ width:56, height:56, borderRadius:8, objectFit:'cover', border:'1px solid rgba(255,255,255,0.15)' }} />
+          )}
+          <button type="button" onClick={() => fileRef.current?.click()}
+            style={{ padding:'8px 14px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#c4b5fd', fontSize:12, cursor:'pointer' }}>
+            {preview ? 'Change photo' : '📷 Upload photo'}
+          </button>
+          {imageFile && <span style={{ fontSize:11, color:'#64748b' }}>{imageFile.name}</span>}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleFile} />
+
+        <label style={labelStyle}>Or Image URL</label>
+        <input style={inputStyle} value={form.image_url} onChange={e => { setForm({...form, image_url:e.target.value}); if(e.target.value){ setImageFile(null); setPreview(e.target.value) } }} placeholder="https://... (used if no photo uploaded)" />
 
         <label style={labelStyle}>Description</label>
         <textarea style={{...inputStyle, minHeight:60, resize:'vertical'}} value={form.description} onChange={e => setForm({...form, description:e.target.value})} placeholder="Notes, design details..." />
@@ -1889,7 +1939,7 @@ function AdminPinDatabase() {
         <div style={{ display:'flex', gap:8, marginTop:4 }}>
           <button onClick={save} disabled={saving}
             style={{ flex:1, padding:'10px', borderRadius:8, border:'none', background:'#7c3aed', color:'#fff', fontWeight:'bold', fontSize:13, cursor:'pointer', opacity:saving?0.6:1 }}>
-            {saving ? 'Saving...' : editing ? 'Update Pin' : 'Add to Database'}
+            {uploading ? 'Uploading photo...' : saving ? 'Saving...' : editing ? 'Update Pin' : 'Add to Database'}
           </button>
           {editing && (
             <button onClick={resetForm}
