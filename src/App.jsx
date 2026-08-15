@@ -808,8 +808,8 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
 
   function pickMatch(match) {
     setName(match.title || '')
-    setSeries(match.source ? `via ${match.source}` : '')
-    setDesc('')
+    setSeries('')
+    setDesc(match.title || '')
     setEstValue(aiGuess?.estimated_value ? String(aiGuess.estimated_value) : '')
     setShowMatches(false)
     setIdentified(true)
@@ -817,8 +817,8 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
 
   function useAiGuessInstead() {
     setName(aiGuess?.character || '')
-    setSeries(aiGuess?.series || '')
-    setDesc(aiGuess?.description || '')
+    setSeries('')
+    setDesc(aiGuess?.character || '')
     setEstValue(aiGuess?.estimated_value ? String(aiGuess.estimated_value) : '')
     setShowMatches(false)
     setIdentified(true)
