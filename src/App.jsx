@@ -1760,9 +1760,180 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
   )
 }
 
+// ── Admin: Pin Database ─────────────────────────────────────────────────────
+const emptyDbForm = { id:null, name:'', series:'', park:'', release_year:'', edition_size:'', estimated_value:'', image_url:'', description:'', source_link:'' }
+
+function AdminPinDatabase() {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [form, setForm] = useState(emptyDbForm)
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [msg, setMsg] = useState('')
+
+  async function load() {
+    setLoading(true)
+    const { data, error } = await supabase.from('pin_database').select('*').order('created_at', { ascending:false })
+    if (!error) setRows(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
+
+  function startEdit(row) {
+    setForm({
+      id: row.id, name: row.name || '', series: row.series || '', park: row.park || '',
+      release_year: row.release_year || '', edition_size: row.edition_size || '',
+      estimated_value: row.estimated_value ?? '', image_url: row.image_url || '',
+      description: row.description || '', source_link: row.source_link || ''
+    })
+    setEditing(true); setMsg(''); setError('')
+    window.scrollTo({ top:0, behavior:'smooth' })
+  }
+
+  function resetForm() { setForm(emptyDbForm); setEditing(false) }
+
+  async function save() {
+    if (!form.name.trim()) { setError('Pin name is required.'); return }
+    setSaving(true); setError(''); setMsg('')
+    const payload = {
+      name: form.name.trim(),
+      series: form.series.trim() || null,
+      park: form.park.trim() || null,
+      release_year: form.release_year ? parseInt(form.release_year) : null,
+      edition_size: form.edition_size.trim() || null,
+      estimated_value: form.estimated_value !== '' ? parseFloat(form.estimated_value) : null,
+      image_url: form.image_url.trim() || null,
+      description: form.description.trim() || null,
+      source_link: form.source_link.trim() || null,
+      updated_at: new Date().toISOString()
+    }
+    let error
+    if (editing) {
+      ({ error } = await supabase.from('pin_database').update(payload).eq('id', form.id))
+    } else {
+      ({ error } = await supabase.from('pin_database').insert([payload]))
+    }
+    setSaving(false)
+    if (error) { setError(error.message); return }
+    setMsg(editing ? 'Pin updated ✓' : 'Pin added to database ✓')
+    resetForm(); load()
+  }
+
+  async function remove(id) {
+    if (!window.confirm('Delete this pin from the database? This cannot be undone.')) return
+    const { error } = await supabase.from('pin_database').delete().eq('id', id)
+    if (!error) setRows(prev => prev.filter(r => r.id !== id))
+  }
+
+  const filtered = rows.filter(r =>
+    !search.trim() || `${r.name} ${r.series} ${r.park}`.toLowerCase().includes(search.toLowerCase())
+  )
+
+  const inputStyle = { width:'100%', padding:'8px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'rgba(255,255,255,0.04)', color:'#f1f5f9', fontSize:13, marginBottom:8 }
+  const labelStyle = { fontSize:11, color:'#94a3b8', marginBottom:3, display:'block' }
+
+  return (
+    <div style={{ padding:'12px 4px' }}>
+      <div style={{ fontSize:18, fontWeight:'bold', color:'#f1f5f9', marginBottom:4 }}>📋 Pin Database (Admin)</div>
+      <div style={{ fontSize:12, color:'#64748b', marginBottom:16 }}>{rows.length} pins in the shared reference database</div>
+
+      <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, padding:14, marginBottom:20 }}>
+        <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:10 }}>
+          {editing ? '✏️ Edit Pin' : '➕ Add New Pin'}
+        </div>
+
+        <label style={labelStyle}>Name *</label>
+        <input style={inputStyle} value={form.name} onChange={e => setForm({...form, name:e.target.value})} placeholder="Pin name" />
+
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+          <div>
+            <label style={labelStyle}>Series / Collection</label>
+            <input style={inputStyle} value={form.series} onChange={e => setForm({...form, series:e.target.value})} placeholder="e.g. Hidden Disney 2025 Wave A" />
+          </div>
+          <div>
+            <label style={labelStyle}>Park</label>
+            <input style={inputStyle} value={form.park} onChange={e => setForm({...form, park:e.target.value})} placeholder="e.g. WDW" />
+          </div>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
+          <div>
+            <label style={labelStyle}>Release Year</label>
+            <input style={inputStyle} type="number" value={form.release_year} onChange={e => setForm({...form, release_year:e.target.value})} placeholder="2025" />
+          </div>
+          <div>
+            <label style={labelStyle}>Edition Size</label>
+            <input style={inputStyle} value={form.edition_size} onChange={e => setForm({...form, edition_size:e.target.value})} placeholder="LE 4000" />
+          </div>
+          <div>
+            <label style={labelStyle}>Est. Value ($)</label>
+            <input style={inputStyle} type="number" step="0.01" value={form.estimated_value} onChange={e => setForm({...form, estimated_value:e.target.value})} placeholder="15.00" />
+          </div>
+        </div>
+
+        <label style={labelStyle}>Image URL</label>
+        <input style={inputStyle} value={form.image_url} onChange={e => setForm({...form, image_url:e.target.value})} placeholder="https://..." />
+
+        <label style={labelStyle}>Description</label>
+        <textarea style={{...inputStyle, minHeight:60, resize:'vertical'}} value={form.description} onChange={e => setForm({...form, description:e.target.value})} placeholder="Notes, design details..." />
+
+        <label style={labelStyle}>Source Link</label>
+        <input style={inputStyle} value={form.source_link} onChange={e => setForm({...form, source_link:e.target.value})} placeholder="eBay / PinPics link used to confirm this pin" />
+
+        {error && <div style={{ color:'#f87171', fontSize:12, marginBottom:8 }}>{error}</div>}
+        {msg && <div style={{ color:'#34d399', fontSize:12, marginBottom:8 }}>{msg}</div>}
+
+        <div style={{ display:'flex', gap:8, marginTop:4 }}>
+          <button onClick={save} disabled={saving}
+            style={{ flex:1, padding:'10px', borderRadius:8, border:'none', background:'#7c3aed', color:'#fff', fontWeight:'bold', fontSize:13, cursor:'pointer', opacity:saving?0.6:1 }}>
+            {saving ? 'Saving...' : editing ? 'Update Pin' : 'Add to Database'}
+          </button>
+          {editing && (
+            <button onClick={resetForm}
+              style={{ padding:'10px 16px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', fontSize:13, cursor:'pointer' }}>
+              Cancel
+            </button>
+          )}
+        </div>
+      </div>
+
+      <input style={{...inputStyle, marginBottom:12}} placeholder="🔍 Search database..." value={search} onChange={e => setSearch(e.target.value)} />
+
+      {loading ? (
+        <div style={{ textAlign:'center', color:'#64748b', padding:20 }}>Loading...</div>
+      ) : filtered.length === 0 ? (
+        <div style={{ textAlign:'center', color:'#64748b', padding:20 }}>No pins found.</div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {filtered.map(row => (
+            <div key={row.id} style={{ display:'flex', gap:10, alignItems:'center', background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:10, padding:10 }}>
+              <div style={{ width:44, height:44, borderRadius:8, overflow:'hidden', background:'rgba(255,255,255,0.05)', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {row.image_url ? <img src={row.image_url} alt={row.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <span style={{ fontSize:18 }}>📌</span>}
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:'bold', color:'#f1f5f9', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{row.name}</div>
+                <div style={{ fontSize:11, color:'#94a3b8' }}>
+                  {[row.series, row.park, row.edition_size].filter(Boolean).join(' • ') || 'No details yet'}
+                  {row.estimated_value != null && <span style={{ color:'#34d399' }}> • ${row.estimated_value}</span>}
+                </div>
+              </div>
+              <button onClick={() => startEdit(row)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#c4b5fd', fontSize:11, cursor:'pointer' }}>Edit</button>
+              <button onClick={() => remove(row.id)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(248,113,113,0.3)', background:'transparent', color:'#f87171', fontSize:11, cursor:'pointer' }}>Delete</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState(null)
+  const ADMIN_EMAIL = 'waltnv702@gmail.com' // replace with your login email
   const [pins, setPins] = useState([])
   const [books, setBooks] = useState([])
   const [tab, setTab] = useState('have')
@@ -1947,6 +2118,7 @@ export default function App() {
     { id:'add',     icon:'＋', label:'Add Pin' },
     { id:'trade',   icon:'🤝', label:'Trade' },
     { id:'profile', icon:'👤', label:'Profile' },
+    ...(user.email === ADMIN_EMAIL ? [{ id:'admin', icon:'📋', label:'Pin DB' }] : [])
   ]
 
   return (
@@ -1993,6 +2165,7 @@ export default function App() {
         {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} onToggleTrader={toggleTrader} loading={pinsLoading} userId={user.id} />}
         {tab==='books'   && <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} onUpdateBook={updateBook} hasAccess={hasAccess} onUpgrade={handleUpgrade} userId={user.id} />}
         {tab==='add'     && (multiScan && hasAccess ? <MultiPinScanner onAddMultiple={addMultiplePins} userId={user.id} onClose={() => setMultiScan(false)} /> : <AddPinForm onAdd={addPin} userId={user.id} hasAccess={hasAccess} onUpgrade={handleUpgrade} onMultiScan={() => setMultiScan(true)} />)}
+        {tab==='admin'   && user.email === ADMIN_EMAIL && <AdminPinDatabase />}
         {tab==='trade'   && <TradingPage user={user} pins={pins} hasAccess={hasAccess} profile={profile} onUpdateProfile={updateProfile} onUpgrade={handleUpgrade} onLegal={setLegalPage} />}
         {tab==='profile' && <ProfilePage user={user} haveCount={haveCount} wantCount={wantCount} subscription={subscription} onUpgrade={handleUpgrade} profile={profile} onUpdateProfile={updateProfile} onLegal={setLegalPage} />}
       </div>
