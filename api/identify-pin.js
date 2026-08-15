@@ -85,11 +85,13 @@ export default async function handler(req, res) {
     }
 
     // Build our match list directly from Lens results (real photos, real titles, real links)
+    // Include price when Google Lens found it on the source page (common for shopping/marketplace listings)
     const matches = visualMatches.map(m => ({
       title: m.title || '',
       thumbnail: m.thumbnail || m.image || '',
       link: m.link || '',
-      source: m.source || 'Web'
+      source: m.source || 'Web',
+      price: m.price?.extracted_value ?? (typeof m.price?.value === 'number' ? m.price.value : null)
     }))
 
     // Use the top match's title as our best-guess name/search anchor.
