@@ -1992,12 +1992,15 @@ function AdminPinDatabase() {
         )}
 
         {lensResults && lensResults.length > 0 && (
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, maxHeight:280, overflowY:'auto' }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:280, overflowY:'auto' }}>
             {lensResults.map((m, i) => (
               <a key={i} href={m.link} target="_blank" rel="noopener noreferrer"
-                style={{ border:'1px solid rgba(255,255,255,0.12)', borderRadius:8, overflow:'hidden', background:'rgba(255,255,255,0.03)', textDecoration:'none' }}>
-                <img src={m.thumbnail} alt={m.title} style={{ width:'100%', height:64, objectFit:'cover', display:'block' }} />
-                <div style={{ padding:'4px 6px', fontSize:9, color:'#94a3b8', lineHeight:1.3, maxHeight:32, overflow:'hidden' }}>{m.title}</div>
+                style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(255,255,255,0.04)', borderRadius:8, padding:8, textDecoration:'none' }}>
+                {m.thumbnail && <img src={m.thumbnail} alt="" style={{ width:36, height:36, borderRadius:6, objectFit:'contain', background:'rgba(255,255,255,0.06)', flexShrink:0 }} />}
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:11, color:'#e2e8f0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.title}</div>
+                  <div style={{ fontSize:10, color:'#64748b' }}>{m.source}</div>
+                </div>
               </a>
             ))}
           </div>
