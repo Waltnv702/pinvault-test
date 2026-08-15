@@ -1786,7 +1786,8 @@ function AdminPinDatabase() {
   // Photo reference lookup (reverse image search) - also purely informational
   const [lensPreview, setLensPreview] = useState('')
   const [lensResults, setLensResults] = useState(null)
-  const [lensValue, setLensValue] = useState(null)
+  const [lensPriced, setLensPriced] = useState([])   // eBay listings with real prices, used for value calc
+  const [lensChecked, setLensChecked] = useState([]) // parallel array of booleans
   const [lensLoading, setLensLoading] = useState(false)
   const [lensError, setLensError] = useState('')
   const lensFileRef = useRef()
@@ -1794,7 +1795,7 @@ function AdminPinDatabase() {
   async function lookupByPhoto(e) {
     const file = e.target.files[0]
     if (!file) return
-    setLensLoading(true); setLensError(''); setLensResults(null); setLensValue(null)
+    setLensLoading(true); setLensError(''); setLensResults(null); setLensPriced([]); setLensChecked([])
     const reader = new FileReader()
     reader.onload = ev => setLensPreview(ev.target.result)
     reader.readAsDataURL(file)
@@ -1813,7 +1814,11 @@ function AdminPinDatabase() {
       const data = await resp.json()
       if (!data.found) throw new Error(data.reason || 'No matches found')
       setLensResults(data.matches || [])
-      setLensValue(data.value_estimate || null)
+      const priced = (data.ebay_matches || [])
+        .map(m => ({ ...m, priceNum: parseFloat((m.price || '').replace(/[^0-9.]/g,'')) }))
+        .filter(m => !isNaN(m.priceNum))
+      setLensPriced(priced)
+      setLensChecked(priced.map(() => true))
     } catch (err) {
       setLensError(err.message)
     }
@@ -1926,6 +1931,17 @@ function AdminPinDatabase() {
     if (!error) setRows(prev => prev.filter(r => r.id !== id))
   }
 
+  function toggleLensChecked(i) {
+    setLensChecked(prev => prev.map((v, idx) => idx === i ? !v : v))
+  }
+
+  function computeLensMedian() {
+    const active = lensPriced.filter((_, i) => lensChecked[i]).map(m => m.priceNum).sort((a,b) => a-b)
+    if (active.length === 0) return null
+    const mid = Math.floor(active.length / 2)
+    return active.length % 2 !== 0 ? active[mid] : (active[mid-1] + active[mid]) / 2
+  }
+
   const filtered = rows.filter(r =>
     !search.trim() || `${r.name} ${r.series} ${r.park}`.toLowerCase().includes(search.toLowerCase())
   )
@@ -1993,16 +2009,12 @@ function AdminPinDatabase() {
           <div style={{ color:'#64748b', fontSize:12 }}>No visual matches found for that photo.</div>
         )}
 
-        {lensValue && (
-          <div style={{ marginBottom:10, color:'#34d399', fontWeight:'bold', fontSize:12 }}>
-            💰 Est. value: ${lensValue.estimated_value}
-            <span style={{ fontWeight:'normal', color:'#94a3b8' }}> (range ${lensValue.price_range.low}–${lensValue.price_range.high}, {lensValue.sample_size} listings)</span>
-            <div style={{ fontWeight:'normal', fontSize:9, color:'#64748b', marginTop:2 }}>Active eBay listing prices, not confirmed sold prices</div>
-          </div>
+        {lensResults && lensResults.length === 0 && (
+          <div style={{ color:'#64748b', fontSize:12 }}>No visual matches found for that photo.</div>
         )}
 
         {lensResults && lensResults.length > 0 && (
-          <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:280, overflowY:'auto' }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:220, overflowY:'auto', marginBottom: lensPriced.length > 0 ? 14 : 0 }}>
             {lensResults.map((m, i) => (
               <a key={i} href={m.link} target="_blank" rel="noopener noreferrer"
                 style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(255,255,255,0.04)', borderRadius:8, padding:8, textDecoration:'none' }}>
@@ -2014,6 +2026,31 @@ function AdminPinDatabase() {
               </a>
             ))}
           </div>
+        )}
+
+        {lensPriced.length > 0 && (
+          <>
+            <div style={{ fontSize:11, fontWeight:'bold', color:'#c4b5fd', marginBottom:6, borderTop:'1px solid rgba(255,255,255,0.1)', paddingTop:10 }}>Value calculation</div>
+            <div style={{ marginBottom:10 }}>
+              <div style={{ color:'#34d399', fontWeight:'bold', fontSize:12 }}>
+                💰 Est. value: ${computeLensMedian()?.toFixed(2) ?? '—'}
+                <span style={{ fontWeight:'normal', color:'#94a3b8' }}> (median of {lensChecked.filter(Boolean).length} checked listing{lensChecked.filter(Boolean).length===1?'':'s'})</span>
+              </div>
+              <div style={{ fontWeight:'normal', fontSize:9, color:'#64748b', marginTop:2 }}>Uncheck listings below to exclude them from the value calculation. Active eBay listing prices, not confirmed sold prices.</div>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:260, overflowY:'auto' }}>
+              {lensPriced.map((m, i) => (
+                <div key={i} style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(255,255,255,0.04)', borderRadius:8, padding:8, opacity: lensChecked[i] ? 1 : 0.4 }}>
+                  <input type="checkbox" checked={lensChecked[i]} onChange={() => toggleLensChecked(i)} style={{ width:16, height:16, flexShrink:0, cursor:'pointer' }} />
+                  {m.thumbnail && <img src={m.thumbnail} alt="" style={{ width:36, height:36, borderRadius:6, objectFit:'contain', background:'rgba(255,255,255,0.06)', flexShrink:0 }} />}
+                  <a href={m.link} target="_blank" rel="noopener noreferrer" style={{ flex:1, minWidth:0, textDecoration:'none' }}>
+                    <div style={{ fontSize:11, color:'#e2e8f0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.title}</div>
+                    <div style={{ fontSize:11, color:'#34d399', fontWeight:'bold' }}>{m.price} {m.condition && <span style={{ color:'#64748b', fontWeight:'normal' }}>({m.condition})</span>}</div>
+                  </a>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
