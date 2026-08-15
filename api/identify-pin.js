@@ -1,19 +1,11 @@
-// Extract dollar amounts from search snippets and compute a value estimate
-function extractPrices(results) {
-  const prices = []
-  const priceRegex = /\$\s?(\d{1,4}(?:\.\d{2})?)/g
-  for (const r of results) {
-    const text = `${r.title} ${r.snippet}`
-    let match
-    while ((match = priceRegex.exec(text)) !== null) {
-      const val = parseFloat(match[1])
-      // Filter out shipping costs and unrealistic outliers
-      if (val >= 2 && val <= 2000) prices.push(val)
-    }
-  }
+// Extract dollar amounts from eBay listing prices and compute a value estimate
+function estimateValueFromListings(items) {
+  const prices = items
+    .map(i => parseFloat(i.price?.value))
+    .filter(v => !isNaN(v) && v >= 2 && v <= 2000)
+
   if (prices.length === 0) return null
   prices.sort((a, b) => a - b)
-  // Median is more resistant to outliers than mean (e.g. a "lot of 50 pins" listing)
   const mid = Math.floor(prices.length / 2)
   const median = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2
   return {
@@ -21,6 +13,25 @@ function extractPrices(results) {
     price_range: { low: prices[0], high: prices[prices.length - 1] },
     sample_size: prices.length
   }
+}
+
+// Get an OAuth token from eBay using the Client Credentials flow (no user login needed for search)
+async function getEbayToken(clientId, clientSecret) {
+  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+  const resp = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${basicAuth}`
+    },
+    body: 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope'
+  })
+  if (!resp.ok) {
+    const errText = await resp.text()
+    throw new Error(`eBay OAuth error: ${resp.status} - ${errText}`)
+  }
+  const data = await resp.json()
+  return data.access_token
 }
 
 export default async function handler(req, res) {
@@ -36,10 +47,11 @@ export default async function handler(req, res) {
     if (!image) return res.status(400).json({ found: false, reason: 'No image provided' })
 
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
-    const SERPAPI_KEY = process.env.SERPAPI_KEY
+    const EBAY_CLIENT_ID = process.env.EBAY_CLIENT_ID
+    const EBAY_CLIENT_SECRET = process.env.EBAY_CLIENT_SECRET
 
     if (!ANTHROPIC_API_KEY) return res.status(500).json({ found: false, reason: 'Anthropic API key not configured' })
-    if (!SERPAPI_KEY) return res.status(500).json({ found: false, reason: 'SerpAPI key not configured' })
+    if (!EBAY_CLIENT_ID || !EBAY_CLIENT_SECRET) return res.status(500).json({ found: false, reason: 'eBay API not configured' })
 
     // --- STEP 1: Claude vision describes the pin ---
     const isUrl = image.startsWith('http')
@@ -71,7 +83,7 @@ export default async function handler(req, res) {
               type: 'text',
               text: `You are a Disney pin trading expert. Analyze this Disney collectible pin image.
 
-Your job is to generate the best possible search query to find this exact pin online — not to guess the final answer yourself.
+Your job is to generate the best possible search query to find this exact pin on eBay — not to guess the final answer yourself.
 
 Focus on:
 1. Exact character name (be as specific as possible)
@@ -93,7 +105,7 @@ Respond with ONLY a valid JSON object, no markdown, no extra text:
   "visible_text": "any text you can read on the pin or null",
   "park_association": "park name or null",
   "event_association": "event name or null",
-  "search_query": "optimized 5-7 word search query for finding this exact pin",
+  "search_query": "optimized 4-6 word eBay search query for finding this exact pin (do not include the word 'pin' more than once, keep it concise)",
   "description": "2 sentence human readable description"
 }
 
@@ -122,44 +134,52 @@ If image contains no pin: {"found": false, "reason": "explanation"}`
 
     if (!pinDescription.found) return res.status(200).json(pinDescription)
 
-    // --- STEP 2: SerpAPI Google Image Search for real pin matches ---
-    const imageSearchQuery = `Disney pin ${pinDescription.search_query}`
-    const imageSearchUrl = new URL('https://serpapi.com/search.json')
-    imageSearchUrl.searchParams.set('engine', 'google_images')
-    imageSearchUrl.searchParams.set('q', imageSearchQuery)
-    imageSearchUrl.searchParams.set('api_key', SERPAPI_KEY)
-    imageSearchUrl.searchParams.set('num', '6')
+    // --- STEP 2: Get eBay OAuth token ---
+    const ebayToken = await getEbayToken(EBAY_CLIENT_ID, EBAY_CLIENT_SECRET)
 
-    const imageSearchResponse = await fetch(imageSearchUrl.toString())
-    const imageSearchData = await imageSearchResponse.json()
+    // --- STEP 3: Search eBay Browse API for matching pins ---
+    const searchQuery = `Disney pin ${pinDescription.search_query}`
+    const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search')
+    searchUrl.searchParams.set('q', searchQuery)
+    searchUrl.searchParams.set('category_ids', '3946') // Disneyana/Pins category
+    searchUrl.searchParams.set('limit', '8')
 
-    const matches = (imageSearchData.images_results || []).slice(0, 6).map(item => ({
+    const ebaySearchResponse = await fetch(searchUrl.toString(), {
+      headers: {
+        'Authorization': `Bearer ${ebayToken}`,
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (!ebaySearchResponse.ok) {
+      const errText = await ebaySearchResponse.text()
+      return res.status(500).json({ found: false, reason: `eBay search error: ${ebaySearchResponse.status} - ${errText}` })
+    }
+
+    const ebayData = await ebaySearchResponse.json()
+    const items = ebayData.itemSummaries || []
+
+    // --- STEP 4: Format matches for the frontend (same shape as before) ---
+    const matches = items.slice(0, 8).map(item => ({
       title: item.title,
-      thumbnail: item.thumbnail,
-      link: item.link,
-      source: item.source
+      thumbnail: item.image?.imageUrl || item.thumbnailImages?.[0]?.imageUrl || '',
+      link: item.itemWebUrl,
+      source: 'eBay',
+      price: item.price?.value ? `$${item.price.value}` : null,
+      condition: item.condition || null
     }))
 
-    // --- STEP 3: SerpAPI eBay sold listings search for value ---
-    const valueSearchQuery = `Disney pin ${pinDescription.search_query} ebay sold`
-    const valueSearchUrl = new URL('https://serpapi.com/search.json')
-    valueSearchUrl.searchParams.set('engine', 'google')
-    valueSearchUrl.searchParams.set('q', valueSearchQuery)
-    valueSearchUrl.searchParams.set('api_key', SERPAPI_KEY)
-    valueSearchUrl.searchParams.set('num', '5')
+    // --- STEP 5: Estimate value from real eBay listing prices ---
+    const valueEstimate = estimateValueFromListings(items)
 
-    const valueSearchResponse = await fetch(valueSearchUrl.toString())
-    const valueSearchData = await valueSearchResponse.json()
-
-    const valueResults = (valueSearchData.organic_results || []).slice(0, 5).map(item => ({
+    const valueResults = items.slice(0, 5).map(item => ({
       title: item.title,
-      snippet: item.snippet,
-      link: item.link
+      snippet: item.condition ? `${item.condition} — $${item.price?.value || '?'}` : `$${item.price?.value || '?'}`,
+      link: item.itemWebUrl
     }))
 
-    // --- STEP 4: Return everything to the frontend ---
-    const valueEstimate = extractPrices(valueResults)
-
+    // --- STEP 6: Return everything to the frontend ---
     return res.status(200).json({
       found: true,
       character: pinDescription.character,
