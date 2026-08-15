@@ -1777,6 +1777,65 @@ function AdminPinDatabase() {
   const [msg, setMsg] = useState('')
   const fileRef = useRef()
 
+  // eBay reference lookup - separate from the form, purely informational
+  const [ebayQuery, setEbayQuery] = useState('')
+  const [ebayResults, setEbayResults] = useState(null)
+  const [ebayLoading, setEbayLoading] = useState(false)
+  const [ebayError, setEbayError] = useState('')
+
+  // Photo reference lookup (reverse image search) - also purely informational
+  const [lensPreview, setLensPreview] = useState('')
+  const [lensResults, setLensResults] = useState(null)
+  const [lensLoading, setLensLoading] = useState(false)
+  const [lensError, setLensError] = useState('')
+  const lensFileRef = useRef()
+
+  async function lookupByPhoto(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setLensLoading(true); setLensError(''); setLensResults(null)
+    const reader = new FileReader()
+    reader.onload = ev => setLensPreview(ev.target.result)
+    reader.readAsDataURL(file)
+    try {
+      // Upload to a scratch path just to get a public URL for reverse image search
+      const path = `lookup-scratch/${Date.now()}-${file.name.replace(/\s+/g,'_')}`
+      const { error: upErr } = await supabase.storage.from('pin-images').upload(path, file)
+      if (upErr) throw new Error('Upload failed: ' + upErr.message)
+      const { data: pub } = supabase.storage.from('pin-images').getPublicUrl(path)
+
+      const resp = await fetch('/api/identify-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: pub.publicUrl })
+      })
+      const data = await resp.json()
+      if (!data.found) throw new Error(data.reason || 'No matches found')
+      setLensResults(data.matches || [])
+    } catch (err) {
+      setLensError(err.message)
+    }
+    setLensLoading(false)
+  }
+
+  async function lookupEbay() {
+    if (!ebayQuery.trim()) return
+    setEbayLoading(true); setEbayError(''); setEbayResults(null)
+    try {
+      const resp = await fetch('/api/ebay-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: ebayQuery })
+      })
+      const data = await resp.json()
+      if (!resp.ok) throw new Error(data.error || 'Lookup failed')
+      setEbayResults(data.results)
+    } catch (err) {
+      setEbayError(err.message)
+    }
+    setEbayLoading(false)
+  }
+
   async function handleFile(e) {
     const file = e.target.files[0]
     if (!file) return
@@ -1876,6 +1935,74 @@ function AdminPinDatabase() {
     <div style={{ padding:'12px 4px' }}>
       <div style={{ fontSize:18, fontWeight:'bold', color:'#f1f5f9', marginBottom:4 }}>📋 Pin Database (Admin)</div>
       <div style={{ fontSize:12, color:'#64748b', marginBottom:16 }}>{rows.length} pins in the shared reference database</div>
+
+      <div style={{ background:'rgba(124,58,237,0.06)', border:'1px solid rgba(124,58,237,0.25)', borderRadius:12, padding:14, marginBottom:16 }}>
+        <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:8 }}>🔍 eBay Reference Lookup</div>
+        <div style={{ fontSize:11, color:'#94a3b8', marginBottom:10 }}>Search eBay for a pin title or value — this is just a reference, it won't fill in the form for you.</div>
+        <div style={{ display:'flex', gap:8, marginBottom:10 }}>
+          <input style={{...inputStyle, marginBottom:0, flex:1}} placeholder="e.g. Hatbox Ghost Hidden Disney 2025"
+            value={ebayQuery} onChange={e => setEbayQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && lookupEbay()} />
+          <button onClick={lookupEbay} disabled={ebayLoading}
+            style={{ padding:'8px 16px', borderRadius:8, border:'none', background:'#7c3aed', color:'#fff', fontSize:12, fontWeight:'bold', cursor:'pointer', opacity:ebayLoading?0.6:1, whiteSpace:'nowrap' }}>
+            {ebayLoading ? 'Searching...' : 'Look up'}
+          </button>
+        </div>
+
+        {ebayError && <div style={{ color:'#f87171', fontSize:12 }}>{ebayError}</div>}
+
+        {ebayResults && ebayResults.length === 0 && (
+          <div style={{ color:'#64748b', fontSize:12 }}>No eBay listings found for that search.</div>
+        )}
+
+        {ebayResults && ebayResults.length > 0 && (
+          <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:280, overflowY:'auto' }}>
+            {ebayResults.map((r, i) => (
+              <a key={i} href={r.link} target="_blank" rel="noopener noreferrer"
+                style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(255,255,255,0.04)', borderRadius:8, padding:8, textDecoration:'none' }}>
+                {r.thumbnail && <img src={r.thumbnail} alt="" style={{ width:36, height:36, borderRadius:6, objectFit:'cover', flexShrink:0 }} />}
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:11, color:'#e2e8f0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.title}</div>
+                  <div style={{ fontSize:11, color:'#34d399', fontWeight:'bold' }}>{r.price || '—'} {r.condition && <span style={{ color:'#64748b', fontWeight:'normal' }}>({r.condition})</span>}</div>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+        <div style={{ fontSize:9, color:'#64748b', marginTop:8 }}>Active eBay listing prices, not confirmed sold prices.</div>
+      </div>
+
+      <div style={{ background:'rgba(124,58,237,0.06)', border:'1px solid rgba(124,58,237,0.25)', borderRadius:12, padding:14, marginBottom:16 }}>
+        <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:8 }}>📷 Photo Reference Lookup</div>
+        <div style={{ fontSize:11, color:'#94a3b8', marginBottom:10 }}>Upload a photo to find visually similar pins across the web — this is just a reference, it won't fill in the form for you.</div>
+
+        <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:10 }}>
+          {lensPreview && <img src={lensPreview} alt="" style={{ width:44, height:44, borderRadius:8, objectFit:'cover', border:'1px solid rgba(255,255,255,0.15)' }} />}
+          <button type="button" onClick={() => lensFileRef.current?.click()} disabled={lensLoading}
+            style={{ padding:'8px 16px', borderRadius:8, border:'none', background:'#7c3aed', color:'#fff', fontSize:12, fontWeight:'bold', cursor:'pointer', opacity:lensLoading?0.6:1 }}>
+            {lensLoading ? 'Searching...' : lensPreview ? 'Try another photo' : 'Upload photo'}
+          </button>
+        </div>
+        <input ref={lensFileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={lookupByPhoto} />
+
+        {lensError && <div style={{ color:'#f87171', fontSize:12 }}>{lensError}</div>}
+
+        {lensResults && lensResults.length === 0 && (
+          <div style={{ color:'#64748b', fontSize:12 }}>No visual matches found for that photo.</div>
+        )}
+
+        {lensResults && lensResults.length > 0 && (
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, maxHeight:280, overflowY:'auto' }}>
+            {lensResults.map((m, i) => (
+              <a key={i} href={m.link} target="_blank" rel="noopener noreferrer"
+                style={{ border:'1px solid rgba(255,255,255,0.12)', borderRadius:8, overflow:'hidden', background:'rgba(255,255,255,0.03)', textDecoration:'none' }}>
+                <img src={m.thumbnail} alt={m.title} style={{ width:'100%', height:64, objectFit:'cover', display:'block' }} />
+                <div style={{ padding:'4px 6px', fontSize:9, color:'#94a3b8', lineHeight:1.3, maxHeight:32, overflow:'hidden' }}>{m.title}</div>
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, padding:14, marginBottom:20 }}>
         <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:10 }}>
