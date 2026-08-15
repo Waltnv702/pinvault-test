@@ -1,3 +1,28 @@
+// Extract dollar amounts from search snippets and compute a value estimate
+function extractPrices(results) {
+  const prices = []
+  const priceRegex = /\$\s?(\d{1,4}(?:\.\d{2})?)/g
+  for (const r of results) {
+    const text = `${r.title} ${r.snippet}`
+    let match
+    while ((match = priceRegex.exec(text)) !== null) {
+      const val = parseFloat(match[1])
+      // Filter out shipping costs and unrealistic outliers
+      if (val >= 2 && val <= 2000) prices.push(val)
+    }
+  }
+  if (prices.length === 0) return null
+  prices.sort((a, b) => a - b)
+  // Median is more resistant to outliers than mean (e.g. a "lot of 50 pins" listing)
+  const mid = Math.floor(prices.length / 2)
+  const median = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2
+  return {
+    estimated_value: Math.round(median * 100) / 100,
+    price_range: { low: prices[0], high: prices[prices.length - 1] },
+    sample_size: prices.length
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -133,6 +158,8 @@ If image contains no pin: {"found": false, "reason": "explanation"}`
     }))
 
     // --- STEP 4: Return everything to the frontend ---
+    const valueEstimate = extractPrices(valueResults)
+
     return res.status(200).json({
       found: true,
       character: pinDescription.character,
@@ -142,7 +169,8 @@ If image contains no pin: {"found": false, "reason": "explanation"}`
       visible_text: pinDescription.visible_text,
       search_query: pinDescription.search_query,
       matches: matches,
-      value_results: valueResults
+      value_results: valueResults,
+      value_estimate: valueEstimate
     })
 
   } catch (err) {
