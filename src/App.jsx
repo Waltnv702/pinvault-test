@@ -438,7 +438,11 @@ function PinCard({ pin, onDelete, onMove, onToggleTrader, showDesc=true }) {
       <div style={{ padding:'10px 10px 10px' }}>
         <div className="card-name">{pin.name}</div>
         {pin.series && <div className="card-series">{pin.series}</div>}
-        {pin.estimated_value != null && <div style={{ color:'#34d399', fontSize:11, fontWeight:'bold', marginTop:2 }}>💰 ${pin.estimated_value}</div>}
+        {pin.estimated_value != null && (
+          <div style={{ color:'#34d399', fontSize:11, fontWeight:'bold', marginTop:2 }} title="Based on active eBay listing prices, not confirmed sold prices">
+            💰 ${pin.estimated_value} <span style={{ color:'#64748b', fontWeight:'normal', fontSize:9 }}>(active listings)</span>
+          </div>
+        )}
         {showDesc && pin.description && <div className="card-desc">{pin.description}</div>}
         <div style={{ display:'flex', gap:6 }}>
           <button onClick={() => onMove(pin.id, pin.list==='have'?'want':'have')}
@@ -882,6 +886,9 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
                 <div style={{ marginTop:6, color:'#34d399', fontWeight:'bold' }}>
                   💰 Est. value: ${aiGuess.estimated_value}
                   {aiGuess.value_range && ` (range $${aiGuess.value_range.low}–$${aiGuess.value_range.high}, based on ${aiGuess.value_sample_size} listings)`}
+                  <div style={{ fontWeight:'normal', fontSize:10, color:'#64748b', marginTop:2 }}>
+                    Based on active eBay listing prices, not confirmed sold prices
+                  </div>
                 </div>
               )}
             </div>
@@ -934,7 +941,7 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
         <textarea className="field-input" style={{ resize:'vertical', minHeight:85 }} rows={3}
           placeholder="Describe the pin design, edition, special features..."
           value={desc} onChange={e => setDesc(e.target.value)} />
-        <label style={lbl}>Estimated Value ($)</label>
+        <label style={lbl}>Estimated Value ($) <span style={{ fontWeight:'normal', color:'#64748b', fontSize:10 }}>— active eBay listings only, not sold prices</span></label>
         <input className="field-input" type="number" step="0.01" min="0" placeholder="e.g. 12.50"
           value={estValue} onChange={e => setEstValue(e.target.value)} />
         <label style={lbl}>Add to</label>
