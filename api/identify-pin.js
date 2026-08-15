@@ -137,11 +137,13 @@ If image contains no pin: {"found": false, "reason": "explanation"}`
     // --- STEP 2: Get eBay OAuth token ---
     const ebayToken = await getEbayToken(EBAY_CLIENT_ID, EBAY_CLIENT_SECRET)
 
-    // --- STEP 3: Search eBay Browse API for matching pins ---
-    const searchQuery = `Disney pin ${pinDescription.search_query}`
+    // Build a broader, more forgiving search query — lean on park/series/visual terms
+    // rather than fully trusting Claude's character guess, which is often wrong.
+    // Keep it short: eBay's search can return zero results for overly long/specific strings.
+    const rawQuery = `Disney pin ${pinDescription.search_query}`.replace(/\s+/g, ' ').trim()
+    const searchQuery = rawQuery.split(' ').slice(0, 6).join(' ')
     const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search')
     searchUrl.searchParams.set('q', searchQuery)
-    searchUrl.searchParams.set('category_ids', '3946') // Disneyana/Pins category
     searchUrl.searchParams.set('limit', '8')
 
     const ebaySearchResponse = await fetch(searchUrl.toString(), {
@@ -154,7 +156,7 @@ If image contains no pin: {"found": false, "reason": "explanation"}`
 
     if (!ebaySearchResponse.ok) {
       const errText = await ebaySearchResponse.text()
-      return res.status(500).json({ found: false, reason: `eBay search error: ${ebaySearchResponse.status} - ${errText}` })
+      return res.status(500).json({ found: false, reason: `eBay search error: ${ebaySearchResponse.status} - ${errText}`, debug_query: searchQuery, debug_url: searchUrl.toString() })
     }
 
     const ebayData = await ebaySearchResponse.json()
@@ -190,7 +192,10 @@ If image contains no pin: {"found": false, "reason": "explanation"}`
       search_query: pinDescription.search_query,
       matches: matches,
       value_results: valueResults,
-      value_estimate: valueEstimate
+      value_estimate: valueEstimate,
+      debug_ebay_query: searchQuery,
+      debug_ebay_total: ebayData.total ?? null,
+      debug_ebay_raw_count: items.length
     })
 
   } catch (err) {
