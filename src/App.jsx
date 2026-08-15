@@ -1786,6 +1786,7 @@ function AdminPinDatabase() {
   // Photo reference lookup (reverse image search) - also purely informational
   const [lensPreview, setLensPreview] = useState('')
   const [lensResults, setLensResults] = useState(null)
+  const [lensValue, setLensValue] = useState(null)
   const [lensLoading, setLensLoading] = useState(false)
   const [lensError, setLensError] = useState('')
   const lensFileRef = useRef()
@@ -1793,7 +1794,7 @@ function AdminPinDatabase() {
   async function lookupByPhoto(e) {
     const file = e.target.files[0]
     if (!file) return
-    setLensLoading(true); setLensError(''); setLensResults(null)
+    setLensLoading(true); setLensError(''); setLensResults(null); setLensValue(null)
     const reader = new FileReader()
     reader.onload = ev => setLensPreview(ev.target.result)
     reader.readAsDataURL(file)
@@ -1812,6 +1813,7 @@ function AdminPinDatabase() {
       const data = await resp.json()
       if (!data.found) throw new Error(data.reason || 'No matches found')
       setLensResults(data.matches || [])
+      setLensValue(data.value_estimate || null)
     } catch (err) {
       setLensError(err.message)
     }
@@ -1989,6 +1991,14 @@ function AdminPinDatabase() {
 
         {lensResults && lensResults.length === 0 && (
           <div style={{ color:'#64748b', fontSize:12 }}>No visual matches found for that photo.</div>
+        )}
+
+        {lensValue && (
+          <div style={{ marginBottom:10, color:'#34d399', fontWeight:'bold', fontSize:12 }}>
+            💰 Est. value: ${lensValue.estimated_value}
+            <span style={{ fontWeight:'normal', color:'#94a3b8' }}> (range ${lensValue.price_range.low}–${lensValue.price_range.high}, {lensValue.sample_size} listings)</span>
+            <div style={{ fontWeight:'normal', fontSize:9, color:'#64748b', marginTop:2 }}>Active eBay listing prices, not confirmed sold prices</div>
+          </div>
         )}
 
         {lensResults && lensResults.length > 0 && (
