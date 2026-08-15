@@ -438,6 +438,7 @@ function PinCard({ pin, onDelete, onMove, onToggleTrader, showDesc=true }) {
       <div style={{ padding:'10px 10px 10px' }}>
         <div className="card-name">{pin.name}</div>
         {pin.series && <div className="card-series">{pin.series}</div>}
+        {pin.estimated_value != null && <div style={{ color:'#34d399', fontSize:11, fontWeight:'bold', marginTop:2 }}>💰 ${pin.estimated_value}</div>}
         {showDesc && pin.description && <div className="card-desc">{pin.description}</div>}
         <div style={{ display:'flex', gap:6 }}>
           <button onClick={() => onMove(pin.id, pin.list==='have'?'want':'have')}
@@ -690,6 +691,7 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
   const [name, setName] = useState('')
   const [series, setSeries] = useState('')
   const [desc, setDesc] = useState('')
+  const [estValue, setEstValue] = useState('')
   const [list, setList] = useState('have')
   const [imageFile, setImageFile] = useState(null)
   const [imageUrl, setImageUrl] = useState('')
@@ -759,7 +761,10 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
         setAiGuess({
           character: data.character || data.name || '',
           series: data.park_association || data.series || '',
-          description: data.description || ''
+          description: data.description || '',
+          estimated_value: data.value_estimate?.estimated_value || null,
+          value_range: data.value_estimate?.price_range || null,
+          value_sample_size: data.value_estimate?.sample_size || 0
         })
         if (data.matches && data.matches.length > 0) {
           // Real photos found — let the user pick the correct one instead of guessing
@@ -770,6 +775,7 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
           setName(data.character || data.name || '')
           setSeries(data.park_association || data.series || '')
           setDesc(data.description || '')
+          setEstValue(data.value_estimate?.estimated_value ? String(data.value_estimate.estimated_value) : '')
           setIdentified(true)
         }
       } else {
@@ -785,6 +791,7 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
     setName(match.title || aiGuess?.character || '')
     setSeries(aiGuess?.series || '')
     setDesc(aiGuess?.description || '')
+    setEstValue(aiGuess?.estimated_value ? String(aiGuess.estimated_value) : '')
     setShowMatches(false)
     setIdentified(true)
   }
@@ -793,6 +800,7 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
     setName(aiGuess?.character || '')
     setSeries(aiGuess?.series || '')
     setDesc(aiGuess?.description || '')
+    setEstValue(aiGuess?.estimated_value ? String(aiGuess.estimated_value) : '')
     setShowMatches(false)
     setIdentified(true)
   }
@@ -810,8 +818,8 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
         const { data } = supabase.storage.from('pin-images').getPublicUrl(path)
         finalUrl = data.publicUrl
       }
-      await onAdd({ name:name.trim(), series:series.trim(), description:desc.trim(), image_url:finalUrl, list })
-      setName(''); setSeries(''); setDesc(''); setImageUrl(''); setPreview(''); setImageFile(null); setIdentified(false)
+      await onAdd({ name:name.trim(), series:series.trim(), description:desc.trim(), image_url:finalUrl, list, estimated_value: estValue ? parseFloat(estValue) : null })
+      setName(''); setSeries(''); setDesc(''); setEstValue(''); setImageUrl(''); setPreview(''); setImageFile(null); setIdentified(false)
       if (fileRef.current) fileRef.current.value = ''
       if (aiRef.current) aiRef.current.value = ''
       setOk(true); setTimeout(() => setOk(false), 2500)
@@ -870,6 +878,12 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
           <div style={{ padding:'6px 0' }}>
             <div style={{ fontSize:12, color:'#c4b5fd', marginBottom:10, textAlign:'center' }}>
               Claude's best guess: <strong>{aiGuess?.character}</strong> — but pick the real match below if you see it 👇
+              {aiGuess?.estimated_value && (
+                <div style={{ marginTop:6, color:'#34d399', fontWeight:'bold' }}>
+                  💰 Est. value: ${aiGuess.estimated_value}
+                  {aiGuess.value_range && ` (range $${aiGuess.value_range.low}–$${aiGuess.value_range.high}, based on ${aiGuess.value_sample_size} listings)`}
+                </div>
+              )}
             </div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, marginBottom:12 }}>
               {matches.map((m, i) => (
@@ -920,6 +934,9 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
         <textarea className="field-input" style={{ resize:'vertical', minHeight:85 }} rows={3}
           placeholder="Describe the pin design, edition, special features..."
           value={desc} onChange={e => setDesc(e.target.value)} />
+        <label style={lbl}>Estimated Value ($)</label>
+        <input className="field-input" type="number" step="0.01" min="0" placeholder="e.g. 12.50"
+          value={estValue} onChange={e => setEstValue(e.target.value)} />
         <label style={lbl}>Add to</label>
         <div style={{ display:'flex', gap:8, marginBottom:18 }}>
           {['have','want'].map(l => (
