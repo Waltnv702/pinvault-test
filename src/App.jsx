@@ -807,9 +807,9 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
   }
 
   function pickMatch(match) {
-    setName(match.title || aiGuess?.character || '')
-    setSeries(aiGuess?.series || '')
-    setDesc(aiGuess?.description || '')
+    setName(match.title || '')
+    setSeries(match.source ? `via ${match.source}` : '')
+    setDesc('')
     setEstValue(aiGuess?.estimated_value ? String(aiGuess.estimated_value) : '')
     setShowMatches(false)
     setIdentified(true)
