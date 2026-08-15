@@ -727,9 +727,9 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
     const reader = new FileReader()
     reader.onload = ev => {
       setPreview(ev.target.result)
-      // Compress image before sending to AI
+      // Compress image before uploading/sending to AI
       const img = new Image()
-      img.onload = () => {
+      img.onload = async () => {
         const canvas = document.createElement('canvas')
         const maxSize = 1000
         let { width, height } = img
@@ -739,8 +739,23 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
         }
         canvas.width = width; canvas.height = height
         canvas.getContext('2d').drawImage(img, 0, 0, width, height)
-        const compressed = canvas.toDataURL('image/jpeg', 0.8)
-        identifyPin(compressed)
+
+        setIdentifying(true); setError('')
+        try {
+          // Convert canvas to a blob and upload to Supabase first so we have a
+          // public URL — reverse image search needs a real URL, not base64
+          const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85))
+          const path = `${userId}/scan-${Date.now()}.jpg`
+          const { error: upErr } = await supabase.storage.from('pin-images').upload(path, blob)
+          if (upErr) throw new Error('Upload failed: ' + upErr.message)
+          const { data: pub } = supabase.storage.from('pin-images').getPublicUrl(path)
+          setImageUrl(pub.publicUrl)
+          setIdentifying(false)
+          identifyPin(pub.publicUrl)
+        } catch (err) {
+          setIdentifying(false)
+          setError('Upload failed: ' + err.message)
+        }
       }
       img.src = ev.target.result
     }
@@ -881,7 +896,7 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
         ) : showMatches ? (
           <div style={{ padding:'6px 0' }}>
             <div style={{ fontSize:12, color:'#c4b5fd', marginBottom:10, textAlign:'center' }}>
-              Claude's best guess: <strong>{aiGuess?.character}</strong> — but pick the real match below if you see it 👇
+              Tap the photo below that matches your pin 👇
               {aiGuess?.estimated_value && (
                 <div style={{ marginTop:6, color:'#34d399', fontWeight:'bold' }}>
                   💰 Est. value: ${aiGuess.estimated_value}
