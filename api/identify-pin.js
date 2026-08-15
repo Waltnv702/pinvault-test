@@ -11,11 +11,10 @@ export default async function handler(req, res) {
     if (!image) return res.status(400).json({ found: false, reason: 'No image provided' })
 
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
-    const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY
-    const GOOGLE_SEARCH_ENGINE_ID = process.env.GOOGLE_SEARCH_ENGINE_ID
+    const SERPAPI_KEY = process.env.SERPAPI_KEY
 
     if (!ANTHROPIC_API_KEY) return res.status(500).json({ found: false, reason: 'Anthropic API key not configured' })
-    if (!GOOGLE_API_KEY || !GOOGLE_SEARCH_ENGINE_ID) return res.status(500).json({ found: false, reason: 'Google API not configured' })
+    if (!SERPAPI_KEY) return res.status(500).json({ found: false, reason: 'SerpAPI key not configured' })
 
     // --- STEP 1: Claude vision describes the pin ---
     const isUrl = image.startsWith('http')
@@ -47,7 +46,7 @@ export default async function handler(req, res) {
               type: 'text',
               text: `You are a Disney pin trading expert. Analyze this Disney collectible pin image.
 
-Your job is NOT to guess the pin name — instead generate the best possible search query to find this pin on Google.
+Your job is to generate the best possible search query to find this exact pin online — not to guess the final answer yourself.
 
 Focus on:
 1. Exact character name (be as specific as possible)
@@ -69,8 +68,7 @@ Respond with ONLY a valid JSON object, no markdown, no extra text:
   "visible_text": "any text you can read on the pin or null",
   "park_association": "park name or null",
   "event_association": "event name or null",
-  "ebay_search_query": "optimized 4-6 word search query for finding this pin",
-  "google_search_query": "Disney pin [character] [series hints] [park] site:pinpics.com OR site:ebay.com",
+  "search_query": "optimized 5-7 word search query for finding this exact pin",
   "description": "2 sentence human readable description"
 }
 
@@ -99,38 +97,36 @@ If image contains no pin: {"found": false, "reason": "explanation"}`
 
     if (!pinDescription.found) return res.status(200).json(pinDescription)
 
-    // --- STEP 2: Google Custom Search for real pin matches ---
-    const searchQuery = `Disney pin ${pinDescription.google_search_query || pinDescription.ebay_search_query}`
-    
-    const googleUrl = new URL('https://www.googleapis.com/customsearch/v1')
-    googleUrl.searchParams.set('key', GOOGLE_API_KEY)
-    googleUrl.searchParams.set('cx', GOOGLE_SEARCH_ENGINE_ID)
-    googleUrl.searchParams.set('q', searchQuery)
-    googleUrl.searchParams.set('num', '5')
-    googleUrl.searchParams.set('searchType', 'image')
+    // --- STEP 2: SerpAPI Google Image Search for real pin matches ---
+    const imageSearchQuery = `Disney pin ${pinDescription.search_query}`
+    const imageSearchUrl = new URL('https://serpapi.com/search.json')
+    imageSearchUrl.searchParams.set('engine', 'google_images')
+    imageSearchUrl.searchParams.set('q', imageSearchQuery)
+    imageSearchUrl.searchParams.set('api_key', SERPAPI_KEY)
+    imageSearchUrl.searchParams.set('num', '6')
 
-    const googleResponse = await fetch(googleUrl.toString())
-    const googleData = await googleResponse.json()
+    const imageSearchResponse = await fetch(imageSearchUrl.toString())
+    const imageSearchData = await imageSearchResponse.json()
 
-    const matches = (googleData.items || []).map(item => ({
+    const matches = (imageSearchData.images_results || []).slice(0, 6).map(item => ({
       title: item.title,
-      link: item.image?.contextLink || item.link,
-      thumbnail: item.link,
-      snippet: item.snippet || ''
+      thumbnail: item.thumbnail,
+      link: item.link,
+      source: item.source
     }))
 
-    // --- STEP 3: Also search for value on eBay sold listings via Google ---
-    const valueQuery = `Disney pin ${pinDescription.ebay_search_query} sold site:ebay.com`
-    const valueUrl = new URL('https://www.googleapis.com/customsearch/v1')
-    valueUrl.searchParams.set('key', GOOGLE_API_KEY)
-    valueUrl.searchParams.set('cx', GOOGLE_SEARCH_ENGINE_ID)
-    valueUrl.searchParams.set('q', valueQuery)
-    valueUrl.searchParams.set('num', '3')
+    // --- STEP 3: SerpAPI eBay sold listings search for value ---
+    const valueSearchQuery = `Disney pin ${pinDescription.search_query} ebay sold`
+    const valueSearchUrl = new URL('https://serpapi.com/search.json')
+    valueSearchUrl.searchParams.set('engine', 'google')
+    valueSearchUrl.searchParams.set('q', valueSearchQuery)
+    valueSearchUrl.searchParams.set('api_key', SERPAPI_KEY)
+    valueSearchUrl.searchParams.set('num', '5')
 
-    const valueResponse = await fetch(valueUrl.toString())
-    const valueData = await valueResponse.json()
+    const valueSearchResponse = await fetch(valueSearchUrl.toString())
+    const valueSearchData = await valueSearchResponse.json()
 
-    const valueResults = (valueData.items || []).map(item => ({
+    const valueResults = (valueSearchData.organic_results || []).slice(0, 5).map(item => ({
       title: item.title,
       snippet: item.snippet,
       link: item.link
@@ -144,8 +140,7 @@ If image contains no pin: {"found": false, "reason": "explanation"}`
       visual_elements: pinDescription.visual_elements,
       park_association: pinDescription.park_association,
       visible_text: pinDescription.visible_text,
-      ebay_search_query: pinDescription.ebay_search_query,
-      google_search_query: searchQuery,
+      search_query: pinDescription.search_query,
       matches: matches,
       value_results: valueResults
     })
