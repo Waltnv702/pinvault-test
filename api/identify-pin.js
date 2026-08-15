@@ -11,8 +11,13 @@ export default async function handler(req, res) {
     if (!image) return res.status(400).json({ found: false, reason: 'No image provided' })
 
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
-    if (!ANTHROPIC_API_KEY) return res.status(500).json({ found: false, reason: 'API key not configured on server' })
+    const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY
+    const GOOGLE_SEARCH_ENGINE_ID = process.env.GOOGLE_SEARCH_ENGINE_ID
 
+    if (!ANTHROPIC_API_KEY) return res.status(500).json({ found: false, reason: 'Anthropic API key not configured' })
+    if (!GOOGLE_API_KEY || !GOOGLE_SEARCH_ENGINE_ID) return res.status(500).json({ found: false, reason: 'Google API not configured' })
+
+    // --- STEP 1: Claude vision describes the pin ---
     const isUrl = image.startsWith('http')
     let mediaType = 'image/jpeg'
     if (!isUrl) {
@@ -40,29 +45,36 @@ export default async function handler(req, res) {
             imageContent,
             {
               type: 'text',
-              text: `You are a world-class Disney pin trading expert with deep knowledge of Disney collectible pins from all eras and parks worldwide (Walt Disney World, Disneyland, Tokyo Disney, Paris, Hong Kong, Shanghai).
+              text: `You are a Disney pin trading expert. Analyze this Disney collectible pin image.
 
-Analyze this image of a Disney collectible pin and identify it as specifically as possible.
+Your job is NOT to guess the pin name — instead generate the best possible search query to find this pin on Google.
 
-Disney pins typically feature:
-- Disney characters (Mickey, Minnie, princesses, villains, Pixar characters, Star Wars, Marvel, etc.)
-- Park attractions, landmarks, or logos
-- Limited edition markings (LE with edition size)
-- Hidden Mickey designs
-- Annual Passholder exclusives
-- Park-specific series (WDW, DL, EPCOT, etc.)
-- Special events (holidays, anniversaries, runDisney, D23)
-- Artist series or designer collaborations
-
-IMPORTANT: Always provide your BEST GUESS even if not 100% certain. It is better to give a partial identification than to say you cannot identify it. Only return found:false if the image contains no pin at all or is completely unrecognizable.
+Focus on:
+1. Exact character name (be as specific as possible)
+2. What the character is doing or wearing
+3. Any visible text on the pin
+4. Pin shape (round, square, character-shaped)
+5. Any visible series markings, LE numbers, or edition info
+6. Park association if visible (WDW, DL, EPCOT, Tokyo, Paris etc)
+7. Color scheme and key visual elements
+8. Any event association (holiday, anniversary, D23 etc)
 
 Respond with ONLY a valid JSON object, no markdown, no extra text:
 
-If you can identify or partially identify it:
-{"found":true,"name":"Full pin name or best description","series":"Series, collection, or park name","description":"Detailed description: characters shown, design elements, colors, any visible edition info, park or event association, approximate era if known"}
+{
+  "found": true,
+  "character": "Most specific character name you can identify",
+  "visual_elements": ["element1", "element2", "element3"],
+  "pin_shape": "shape description",
+  "visible_text": "any text you can read on the pin or null",
+  "park_association": "park name or null",
+  "event_association": "event name or null",
+  "ebay_search_query": "optimized 4-6 word search query for finding this pin",
+  "google_search_query": "Disney pin [character] [series hints] [park] site:pinpics.com OR site:ebay.com",
+  "description": "2 sentence human readable description"
+}
 
-If the image contains no pin or is completely unrecognizable:
-{"found":false,"reason":"Brief explanation"}`
+If image contains no pin: {"found": false, "reason": "explanation"}`
             }
           ]
         }]
@@ -77,15 +89,66 @@ If the image contains no pin or is completely unrecognizable:
     const claudeData = await claudeResponse.json()
     const text = claudeData.content?.[0]?.text?.trim() || ''
 
-    let pinData
+    let pinDescription
     try {
       const cleaned = text.replace(/```json\n?|\n?```/g, '').trim()
-      pinData = JSON.parse(cleaned)
+      pinDescription = JSON.parse(cleaned)
     } catch {
-      pinData = { found: false, reason: 'Could not parse AI response' }
+      return res.status(500).json({ found: false, reason: 'Could not parse Claude response' })
     }
 
-    return res.status(200).json(pinData)
+    if (!pinDescription.found) return res.status(200).json(pinDescription)
+
+    // --- STEP 2: Google Custom Search for real pin matches ---
+    const searchQuery = `Disney pin ${pinDescription.google_search_query || pinDescription.ebay_search_query}`
+    
+    const googleUrl = new URL('https://www.googleapis.com/customsearch/v1')
+    googleUrl.searchParams.set('key', GOOGLE_API_KEY)
+    googleUrl.searchParams.set('cx', GOOGLE_SEARCH_ENGINE_ID)
+    googleUrl.searchParams.set('q', searchQuery)
+    googleUrl.searchParams.set('num', '5')
+    googleUrl.searchParams.set('searchType', 'image')
+
+    const googleResponse = await fetch(googleUrl.toString())
+    const googleData = await googleResponse.json()
+
+    const matches = (googleData.items || []).map(item => ({
+      title: item.title,
+      link: item.image?.contextLink || item.link,
+      thumbnail: item.link,
+      snippet: item.snippet || ''
+    }))
+
+    // --- STEP 3: Also search for value on eBay sold listings via Google ---
+    const valueQuery = `Disney pin ${pinDescription.ebay_search_query} sold site:ebay.com`
+    const valueUrl = new URL('https://www.googleapis.com/customsearch/v1')
+    valueUrl.searchParams.set('key', GOOGLE_API_KEY)
+    valueUrl.searchParams.set('cx', GOOGLE_SEARCH_ENGINE_ID)
+    valueUrl.searchParams.set('q', valueQuery)
+    valueUrl.searchParams.set('num', '3')
+
+    const valueResponse = await fetch(valueUrl.toString())
+    const valueData = await valueResponse.json()
+
+    const valueResults = (valueData.items || []).map(item => ({
+      title: item.title,
+      snippet: item.snippet,
+      link: item.link
+    }))
+
+    // --- STEP 4: Return everything to the frontend ---
+    return res.status(200).json({
+      found: true,
+      character: pinDescription.character,
+      description: pinDescription.description,
+      visual_elements: pinDescription.visual_elements,
+      park_association: pinDescription.park_association,
+      visible_text: pinDescription.visible_text,
+      ebay_search_query: pinDescription.ebay_search_query,
+      google_search_query: searchQuery,
+      matches: matches,
+      value_results: valueResults
+    })
 
   } catch (err) {
     return res.status(500).json({ found: false, reason: err.message })
