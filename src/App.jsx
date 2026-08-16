@@ -1642,6 +1642,19 @@ function PinChecklistViewer({ checklist, userId, onBack }) {
 
 function PinChecklistsPage({ userId }) {
   const [selected, setSelected] = useState(null)
+  const [dbChecklists, setDbChecklists] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase.from('pin_checklists').select('*').order('created_at', { ascending:false })
+      setDbChecklists((data || []).map(c => ({ id:c.id, title:c.title, image:c.image_url, pins:c.pins || [] })))
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const allChecklists = [...CHECKLISTS, ...dbChecklists]
 
   if (selected) {
     return <PinChecklistViewer checklist={selected} userId={userId} onBack={() => setSelected(null)} />
@@ -1651,18 +1664,22 @@ function PinChecklistsPage({ userId }) {
     <div style={{ padding:'8px 0' }}>
       <div style={{ fontSize:16, fontWeight:'bold', color:'#f1f5f9', marginBottom:4 }}>📖 Series Checklists</div>
       <div style={{ fontSize:12, color:'#94a3b8', marginBottom:14 }}>Tap a checklist, then tap each pin as you find it.</div>
-      <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-        {CHECKLISTS.map(c => (
-          <button key={c.id} onClick={() => setSelected(c)}
-            style={{ display:'flex', gap:12, alignItems:'center', background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, padding:12, cursor:'pointer', textAlign:'left' }}>
-            <img src={c.image} alt={c.title} style={{ width:56, height:56, borderRadius:8, objectFit:'cover' }} />
-            <div>
-              <div style={{ fontSize:14, fontWeight:'bold', color:'#f1f5f9' }}>{c.title}</div>
-              <div style={{ fontSize:11, color:'#64748b' }}>{c.pins.length} pins</div>
-            </div>
-          </button>
-        ))}
-      </div>
+      {loading ? (
+        <div style={{ color:'#64748b', fontSize:12 }}>Loading...</div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {allChecklists.map(c => (
+            <button key={c.id} onClick={() => setSelected(c)}
+              style={{ display:'flex', gap:12, alignItems:'center', background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, padding:12, cursor:'pointer', textAlign:'left' }}>
+              <img src={c.image} alt={c.title} style={{ width:56, height:56, borderRadius:8, objectFit:'cover' }} />
+              <div>
+                <div style={{ fontSize:14, fontWeight:'bold', color:'#f1f5f9' }}>{c.title}</div>
+                <div style={{ fontSize:11, color:'#64748b' }}>{c.pins.length} pins</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -1921,6 +1938,204 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
 
 // ── Admin: Pin Database ─────────────────────────────────────────────────────
 const emptyDbForm = { id:null, name:'', series:'', park:'', release_year:'', edition_size:'', estimated_value:'', image_url:'', description:'', source_link:'' }
+
+// ── Admin: Checklist Builder ────────────────────────────────────────────────
+function AdminChecklistBuilder() {
+  const [title, setTitle] = useState('')
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState('')
+  const [regions, setRegions] = useState([])
+  const [drawing, setDrawing] = useState(null) // { startX, startY, curX, curY } in %
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [error, setError] = useState('')
+  const [existing, setExisting] = useState([])
+  const containerRef = useRef()
+  const fileRef = useRef()
+
+  async function loadExisting() {
+    const { data } = await supabase.from('pin_checklists').select('*').order('created_at', { ascending:false })
+    setExisting(data || [])
+  }
+  useEffect(() => { loadExisting() }, [])
+
+  function handleFile(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setImageFile(file); setRegions([])
+    const reader = new FileReader()
+    reader.onload = ev => setImagePreview(ev.target.result)
+    reader.readAsDataURL(file)
+  }
+
+  function pctFromEvent(e) {
+    const rect = containerRef.current.getBoundingClientRect()
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY
+    const x = ((clientX - rect.left) / rect.width) * 100
+    const y = ((clientY - rect.top) / rect.height) * 100
+    return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) }
+  }
+
+  function startDraw(e) {
+    if (!imagePreview) return
+    e.preventDefault()
+    const { x, y } = pctFromEvent(e)
+    setDrawing({ startX:x, startY:y, curX:x, curY:y })
+  }
+  function moveDraw(e) {
+    if (!drawing) return
+    e.preventDefault()
+    const { x, y } = pctFromEvent(e)
+    setDrawing(prev => ({ ...prev, curX:x, curY:y }))
+  }
+  function endDraw() {
+    if (!drawing) return
+    const left = Math.min(drawing.startX, drawing.curX)
+    const top = Math.min(drawing.startY, drawing.curY)
+    const width = Math.abs(drawing.curX - drawing.startX)
+    const height = Math.abs(drawing.curY - drawing.startY)
+    setDrawing(null)
+    if (width < 1 || height < 1) return // ignore accidental clicks
+    const name = window.prompt('Pin name for this box:')
+    if (!name || !name.trim()) return
+    setRegions(prev => [...prev, { id: `p${Date.now()}`, name: name.trim(), top, left, width, height }])
+  }
+
+  function removeRegion(id) {
+    setRegions(prev => prev.filter(r => r.id !== id))
+  }
+
+  async function save() {
+    if (!title.trim()) { setError('Title is required.'); return }
+    if (!imageFile && !imagePreview) { setError('Please upload a sheet image.'); return }
+    if (regions.length === 0) { setError('Draw at least one box on the image.'); return }
+    setSaving(true); setError(''); setMsg('')
+    try {
+      let imageUrl = imagePreview
+      if (imageFile) {
+        const path = `checklists/${Date.now()}-${imageFile.name.replace(/\s+/g,'_')}`
+        const { error: upErr } = await supabase.storage.from('pin-images').upload(path, imageFile)
+        if (upErr) throw upErr
+        const { data } = supabase.storage.from('pin-images').getPublicUrl(path)
+        imageUrl = data.publicUrl
+      }
+      const { error: insErr } = await supabase.from('pin_checklists').insert([{
+        title: title.trim(), image_url: imageUrl, pins: regions
+      }])
+      if (insErr) throw insErr
+      setMsg('Checklist saved ✓')
+      setTitle(''); setImageFile(null); setImagePreview(''); setRegions([])
+      if (fileRef.current) fileRef.current.value = ''
+      loadExisting()
+    } catch (err) {
+      setError(err.message)
+    }
+    setSaving(false)
+  }
+
+  async function deleteChecklist(id) {
+    if (!window.confirm('Delete this checklist? This cannot be undone.')) return
+    await supabase.from('pin_checklists').delete().eq('id', id)
+    setExisting(prev => prev.filter(c => c.id !== id))
+  }
+
+  const inputStyle = { width:'100%', padding:'8px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'rgba(255,255,255,0.04)', color:'#f1f5f9', fontSize:13, marginBottom:8 }
+  const labelStyle = { fontSize:11, color:'#94a3b8', marginBottom:3, display:'block' }
+
+  const drawBox = drawing ? {
+    top: Math.min(drawing.startY, drawing.curY),
+    left: Math.min(drawing.startX, drawing.curX),
+    width: Math.abs(drawing.curX - drawing.startX),
+    height: Math.abs(drawing.curY - drawing.startY)
+  } : null
+
+  return (
+    <div style={{ padding:'12px 4px' }}>
+      <div style={{ fontSize:18, fontWeight:'bold', color:'#f1f5f9', marginBottom:4 }}>🗂️ Checklist Builder</div>
+      <div style={{ fontSize:12, color:'#64748b', marginBottom:16 }}>Upload a pin sheet, then click-and-drag a box over each pin and name it.</div>
+
+      <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, padding:14, marginBottom:20 }}>
+        <label style={labelStyle}>Checklist Title</label>
+        <input style={inputStyle} value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Hidden Disney 2026 Wave B" />
+
+        {!imagePreview ? (
+          <button type="button" onClick={() => fileRef.current?.click()}
+            style={{ width:'100%', padding:'20px', borderRadius:10, border:'2px dashed rgba(255,255,255,0.2)', background:'transparent', color:'#94a3b8', fontSize:13, cursor:'pointer' }}>
+            📷 Upload pin sheet image
+          </button>
+        ) : (
+          <>
+            <div style={{ fontSize:11, color:'#94a3b8', margin:'8px 0' }}>
+              Click and drag on the image to draw a box around each pin, then name it. {regions.length} pin{regions.length===1?'':'s'} added.
+            </div>
+            <div
+              ref={containerRef}
+              onMouseDown={startDraw} onMouseMove={moveDraw} onMouseUp={endDraw} onMouseLeave={() => setDrawing(null)}
+              onTouchStart={startDraw} onTouchMove={moveDraw} onTouchEnd={endDraw}
+              style={{ position:'relative', width:'100%', lineHeight:0, borderRadius:10, overflow:'hidden', border:'1px solid rgba(255,255,255,0.15)', cursor:'crosshair', userSelect:'none', touchAction:'none' }}
+            >
+              <img src={imagePreview} alt="sheet" style={{ width:'100%', height:'auto', display:'block', pointerEvents:'none' }} />
+              {regions.map(r => (
+                <div key={r.id} style={{ position:'absolute', top:`${r.top}%`, left:`${r.left}%`, width:`${r.width}%`, height:`${r.height}%`, border:'2px solid #34d399', background:'rgba(52,211,153,0.15)', borderRadius:4 }}>
+                  <span style={{ position:'absolute', top:1, left:1, fontSize:8, background:'#34d399', color:'#0b0f1a', padding:'1px 3px', borderRadius:3, fontWeight:'bold', whiteSpace:'nowrap', maxWidth:'95%', overflow:'hidden', textOverflow:'ellipsis' }}>{r.name}</span>
+                </div>
+              ))}
+              {drawBox && (
+                <div style={{ position:'absolute', top:`${drawBox.top}%`, left:`${drawBox.left}%`, width:`${drawBox.width}%`, height:`${drawBox.height}%`, border:'2px dashed #c4b5fd', background:'rgba(196,181,253,0.15)', borderRadius:4, pointerEvents:'none' }} />
+              )}
+            </div>
+            <button type="button" onClick={() => fileRef.current?.click()}
+              style={{ marginTop:8, padding:'6px 12px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', fontSize:11, cursor:'pointer' }}>
+              Change image
+            </button>
+          </>
+        )}
+        <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleFile} />
+
+        {regions.length > 0 && (
+          <div style={{ marginTop:12 }}>
+            <div style={{ fontSize:11, color:'#94a3b8', marginBottom:6 }}>Pins added:</div>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+              {regions.map(r => (
+                <div key={r.id} style={{ display:'flex', alignItems:'center', gap:4, background:'rgba(255,255,255,0.05)', borderRadius:6, padding:'4px 8px', fontSize:11, color:'#e2e8f0' }}>
+                  {r.name}
+                  <button onClick={() => removeRegion(r.id)} style={{ background:'none', border:'none', color:'#f87171', cursor:'pointer', fontSize:12, padding:0, marginLeft:2 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && <div style={{ color:'#f87171', fontSize:12, marginTop:8 }}>{error}</div>}
+        {msg && <div style={{ color:'#34d399', fontSize:12, marginTop:8 }}>{msg}</div>}
+
+        <button onClick={save} disabled={saving}
+          style={{ width:'100%', marginTop:12, padding:'10px', borderRadius:8, border:'none', background:'#7c3aed', color:'#fff', fontWeight:'bold', fontSize:13, cursor:'pointer', opacity:saving?0.6:1 }}>
+          {saving ? 'Saving...' : 'Save Checklist'}
+        </button>
+      </div>
+
+      <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:8 }}>Existing Checklists</div>
+      {existing.length === 0 ? (
+        <div style={{ color:'#64748b', fontSize:12 }}>None added yet.</div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {existing.map(c => (
+            <div key={c.id} style={{ display:'flex', gap:10, alignItems:'center', background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:10, padding:10 }}>
+              <img src={c.image_url} alt={c.title} style={{ width:44, height:44, borderRadius:8, objectFit:'cover' }} />
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:13, fontWeight:'bold', color:'#f1f5f9' }}>{c.title}</div>
+                <div style={{ fontSize:11, color:'#94a3b8' }}>{(c.pins||[]).length} pins</div>
+              </div>
+              <button onClick={() => deleteChecklist(c.id)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(248,113,113,0.3)', background:'transparent', color:'#f87171', fontSize:11, cursor:'pointer' }}>Delete</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function AdminPinDatabase() {
   const [rows, setRows] = useState([])
@@ -2510,7 +2725,7 @@ export default function App() {
     { id:'add',     icon:'＋', label:'Add Pin' },
     { id:'trade',   icon:'🤝', label:'Trade' },
     { id:'profile', icon:'👤', label:'Profile' },
-    ...(user.email === ADMIN_EMAIL ? [{ id:'admin', icon:'📋', label:'Pin DB' }] : [])
+    ...(user.email === ADMIN_EMAIL ? [{ id:'admin', icon:'📋', label:'Pin DB' }, { id:'checklist-admin', icon:'🗂️', label:'Checklist Admin' }] : [])
   ]
 
   return (
@@ -2577,6 +2792,7 @@ export default function App() {
         )}
         {tab==='add'     && (multiScan && hasAccess ? <MultiPinScanner onAddMultiple={addMultiplePins} userId={user.id} onClose={() => setMultiScan(false)} /> : <AddPinForm onAdd={addPin} userId={user.id} hasAccess={hasAccess} onUpgrade={handleUpgrade} onMultiScan={() => setMultiScan(true)} />)}
         {tab==='admin'   && user.email === ADMIN_EMAIL && <AdminPinDatabase />}
+        {tab==='checklist-admin' && user.email === ADMIN_EMAIL && <AdminChecklistBuilder />}
         {tab==='trade'   && <TradingPage user={user} pins={pins} hasAccess={hasAccess} profile={profile} onUpdateProfile={updateProfile} onUpgrade={handleUpgrade} onLegal={setLegalPage} />}
         {tab==='profile' && <ProfilePage user={user} haveCount={haveCount} wantCount={wantCount} subscription={subscription} onUpgrade={handleUpgrade} profile={profile} onUpdateProfile={updateProfile} onLegal={setLegalPage} />}
       </div>
