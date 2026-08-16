@@ -2539,7 +2539,7 @@ function AdminPinDatabase() {
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState(null)
-  const ADMIN_EMAIL = 'YOUR-EMAIL-HERE' // replace with your login email
+  const ADMIN_EMAIL = 'waltnv702@gmail.com' // replace with your login email
   const [pins, setPins] = useState([])
   const [books, setBooks] = useState([])
   const [booksSubTab, setBooksSubTab] = useState('mine')
