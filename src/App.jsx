@@ -1951,6 +1951,10 @@ function AdminChecklistBuilder() {
   const [error, setError] = useState('')
   const [existing, setExisting] = useState([])
   const [editingId, setEditingId] = useState(null)
+  const [drawMode, setDrawMode] = useState('row') // 'row' = draw one box per series row, auto-split + auto-name. 'pin' = draw one box per pin, name manually.
+  const [nameQueue, setNameQueue] = useState([]) // flat ordered list of detected names, consumed as rows are drawn
+  const [detecting, setDetecting] = useState(false)
+  const [detectError, setDetectError] = useState('')
   const containerRef = useRef()
   const fileRef = useRef()
 
@@ -1998,9 +2002,68 @@ function AdminChecklistBuilder() {
     const height = Math.abs(drawing.curY - drawing.startY)
     setDrawing(null)
     if (width < 1 || height < 1) return // ignore accidental clicks
-    const name = window.prompt('Pin name for this box:')
-    if (!name || !name.trim()) return
-    setRegions(prev => [...prev, { id: `p${Date.now()}`, name: name.trim(), top, left, width, height }])
+
+    if (drawMode === 'pin') {
+      const name = window.prompt('Pin name for this box:')
+      if (!name || !name.trim()) return
+      setRegions(prev => [...prev, { id: `p${Date.now()}`, name: name.trim(), top, left, width, height }])
+      return
+    }
+
+    // Row mode: ask how many pins are in this row, split evenly, auto-name from the detected queue
+    const countStr = window.prompt('How many pins are in this row?', '6')
+    const count = parseInt(countStr)
+    if (!countStr || isNaN(count) || count < 1) return
+
+    const cellWidth = width / count
+    const newRegions = []
+    for (let i = 0; i < count; i++) {
+      const suggestedName = nameQueue[i] || `Pin ${regions.length + i + 1}`
+      newRegions.push({
+        id: `p${Date.now()}-${i}`,
+        name: suggestedName,
+        top, height,
+        left: left + i * cellWidth,
+        width: cellWidth
+      })
+    }
+    setRegions(prev => [...prev, ...newRegions])
+    setNameQueue(prev => prev.slice(count)) // consume the names we just used
+  }
+
+  async function autoDetectNames() {
+    setDetecting(true); setDetectError('')
+    try {
+      // Reverse/text reading needs a public URL — upload now if we haven't already
+      let publicUrl = imagePreview
+      if (imageFile && !publicUrl.startsWith('http')) {
+        const path = `checklists/scratch-${Date.now()}-${imageFile.name.replace(/\s+/g,'_')}`
+        const { error: upErr } = await supabase.storage.from('pin-images').upload(path, imageFile)
+        if (upErr) throw upErr
+        const { data } = supabase.storage.from('pin-images').getPublicUrl(path)
+        publicUrl = data.publicUrl
+      }
+      const resp = await fetch('/api/detect-pin-names', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: publicUrl })
+      })
+      const data = await resp.json()
+      if (!resp.ok) throw new Error(data.error || 'Detection failed')
+      const flat = (data.rows || []).flatMap(r => r.names || [])
+      setNameQueue(flat)
+      setMsg(`Detected ${flat.length} pin names across ${data.rows?.length || 0} rows. Now draw a box around each row below.`)
+    } catch (err) {
+      setDetectError(err.message)
+    }
+    setDetecting(false)
+  }
+
+  function renameRegion(id) {
+    const region = regions.find(r => r.id === id)
+    const name = window.prompt('Rename pin:', region?.name || '')
+    if (name === null) return
+    setRegions(prev => prev.map(r => r.id === id ? { ...r, name: name.trim() || r.name } : r))
   }
 
   function removeRegion(id) {
@@ -2013,6 +2076,7 @@ function AdminChecklistBuilder() {
     setImagePreview(c.image_url)
     setImageFile(null)
     setRegions(c.pins || [])
+    setNameQueue([])
     setMsg(''); setError('')
     window.scrollTo({ top:0, behavior:'smooth' })
   }
@@ -2020,6 +2084,7 @@ function AdminChecklistBuilder() {
   function cancelEdit() {
     setEditingId(null)
     setTitle(''); setImageFile(null); setImagePreview(''); setRegions([])
+    setNameQueue([])
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -2091,8 +2156,31 @@ function AdminChecklistBuilder() {
           </button>
         ) : (
           <>
+            <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap' }}>
+              <button type="button" onClick={autoDetectNames} disabled={detecting}
+                style={{ padding:'8px 14px', borderRadius:8, border:'none', background:'#7c3aed', color:'#fff', fontSize:12, fontWeight:'bold', cursor:'pointer', opacity:detecting?0.6:1 }}>
+                {detecting ? 'Reading labels...' : '🪄 Auto-detect pin names'}
+              </button>
+              <div style={{ display:'flex', borderRadius:8, overflow:'hidden', border:'1px solid rgba(255,255,255,0.15)' }}>
+                <button type="button" onClick={() => setDrawMode('row')}
+                  style={{ padding:'8px 12px', border:'none', fontSize:11, fontWeight:'bold', cursor:'pointer', background: drawMode==='row' ? '#7c3aed' : 'transparent', color: drawMode==='row' ? '#fff' : '#94a3b8' }}>
+                  Row mode
+                </button>
+                <button type="button" onClick={() => setDrawMode('pin')}
+                  style={{ padding:'8px 12px', border:'none', fontSize:11, fontWeight:'bold', cursor:'pointer', background: drawMode==='pin' ? '#7c3aed' : 'transparent', color: drawMode==='pin' ? '#fff' : '#94a3b8' }}>
+                  Single-pin mode
+                </button>
+              </div>
+            </div>
+            {detectError && <div style={{ color:'#f87171', fontSize:11, marginBottom:8 }}>{detectError}</div>}
+            {nameQueue.length > 0 && (
+              <div style={{ fontSize:11, color:'#34d399', marginBottom:8 }}>{nameQueue.length} detected names ready — next up: "{nameQueue[0]}"</div>
+            )}
             <div style={{ fontSize:11, color:'#94a3b8', margin:'8px 0' }}>
-              Click and drag on the image to draw a box around each pin, then name it. {regions.length} pin{regions.length===1?'':'s'} added.
+              {drawMode === 'row'
+                ? "Drag a box around an entire row of pins (left edge of first pin to right edge of last). You'll be asked how many pins are in it — names fill in automatically from the detected list."
+                : 'Drag a box around one pin and name it manually.'}
+              {' '}{regions.length} pin{regions.length===1?'':'s'} added so far.
             </div>
             <div
               ref={containerRef}
@@ -2120,11 +2208,11 @@ function AdminChecklistBuilder() {
 
         {regions.length > 0 && (
           <div style={{ marginTop:12 }}>
-            <div style={{ fontSize:11, color:'#94a3b8', marginBottom:6 }}>Pins added:</div>
+            <div style={{ fontSize:11, color:'#94a3b8', marginBottom:6 }}>Pins added — tap a name to rename it:</div>
             <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
               {regions.map(r => (
                 <div key={r.id} style={{ display:'flex', alignItems:'center', gap:4, background:'rgba(255,255,255,0.05)', borderRadius:6, padding:'4px 8px', fontSize:11, color:'#e2e8f0' }}>
-                  {r.name}
+                  <span onClick={() => renameRegion(r.id)} style={{ cursor:'pointer' }}>{r.name}</span>
                   <button onClick={() => removeRegion(r.id)} style={{ background:'none', border:'none', color:'#f87171', cursor:'pointer', fontSize:12, padding:0, marginLeft:2 }}>✕</button>
                 </div>
               ))}
