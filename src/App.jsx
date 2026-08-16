@@ -1950,6 +1950,7 @@ function AdminChecklistBuilder() {
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
   const [existing, setExisting] = useState([])
+  const [editingId, setEditingId] = useState(null)
   const containerRef = useRef()
   const fileRef = useRef()
 
@@ -2006,6 +2007,22 @@ function AdminChecklistBuilder() {
     setRegions(prev => prev.filter(r => r.id !== id))
   }
 
+  function startEditChecklist(c) {
+    setEditingId(c.id)
+    setTitle(c.title)
+    setImagePreview(c.image_url)
+    setImageFile(null)
+    setRegions(c.pins || [])
+    setMsg(''); setError('')
+    window.scrollTo({ top:0, behavior:'smooth' })
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setTitle(''); setImageFile(null); setImagePreview(''); setRegions([])
+    if (fileRef.current) fileRef.current.value = ''
+  }
+
   async function save() {
     if (!title.trim()) { setError('Title is required.'); return }
     if (!imageFile && !imagePreview) { setError('Please upload a sheet image.'); return }
@@ -2020,11 +2037,16 @@ function AdminChecklistBuilder() {
         const { data } = supabase.storage.from('pin-images').getPublicUrl(path)
         imageUrl = data.publicUrl
       }
-      const { error: insErr } = await supabase.from('pin_checklists').insert([{
-        title: title.trim(), image_url: imageUrl, pins: regions
-      }])
-      if (insErr) throw insErr
-      setMsg('Checklist saved ✓')
+      const payload = { title: title.trim(), image_url: imageUrl, pins: regions, updated_at: new Date().toISOString() }
+      let dbErr
+      if (editingId) {
+        ({ error: dbErr } = await supabase.from('pin_checklists').update(payload).eq('id', editingId))
+      } else {
+        ({ error: dbErr } = await supabase.from('pin_checklists').insert([payload]))
+      }
+      if (dbErr) throw dbErr
+      setMsg(editingId ? 'Checklist updated ✓' : 'Checklist saved ✓')
+      setEditingId(null)
       setTitle(''); setImageFile(null); setImagePreview(''); setRegions([])
       if (fileRef.current) fileRef.current.value = ''
       loadExisting()
@@ -2056,6 +2078,9 @@ function AdminChecklistBuilder() {
       <div style={{ fontSize:12, color:'#64748b', marginBottom:16 }}>Upload a pin sheet, then click-and-drag a box over each pin and name it.</div>
 
       <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, padding:14, marginBottom:20 }}>
+        <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:8 }}>
+          {editingId ? '✏️ Editing Checklist' : '➕ New Checklist'}
+        </div>
         <label style={labelStyle}>Checklist Title</label>
         <input style={inputStyle} value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Hidden Disney 2026 Wave B" />
 
@@ -2110,10 +2135,18 @@ function AdminChecklistBuilder() {
         {error && <div style={{ color:'#f87171', fontSize:12, marginTop:8 }}>{error}</div>}
         {msg && <div style={{ color:'#34d399', fontSize:12, marginTop:8 }}>{msg}</div>}
 
-        <button onClick={save} disabled={saving}
-          style={{ width:'100%', marginTop:12, padding:'10px', borderRadius:8, border:'none', background:'#7c3aed', color:'#fff', fontWeight:'bold', fontSize:13, cursor:'pointer', opacity:saving?0.6:1 }}>
-          {saving ? 'Saving...' : 'Save Checklist'}
-        </button>
+        <div style={{ display:'flex', gap:8, marginTop:12 }}>
+          <button onClick={save} disabled={saving}
+            style={{ flex:1, padding:'10px', borderRadius:8, border:'none', background:'#7c3aed', color:'#fff', fontWeight:'bold', fontSize:13, cursor:'pointer', opacity:saving?0.6:1 }}>
+            {saving ? 'Saving...' : editingId ? 'Update Checklist' : 'Save Checklist'}
+          </button>
+          {editingId && (
+            <button onClick={cancelEdit}
+              style={{ padding:'10px 16px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', fontSize:13, cursor:'pointer' }}>
+              Cancel
+            </button>
+          )}
+        </div>
       </div>
 
       <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:8 }}>Existing Checklists</div>
@@ -2128,6 +2161,7 @@ function AdminChecklistBuilder() {
                 <div style={{ fontSize:13, fontWeight:'bold', color:'#f1f5f9' }}>{c.title}</div>
                 <div style={{ fontSize:11, color:'#94a3b8' }}>{(c.pins||[]).length} pins</div>
               </div>
+              <button onClick={() => startEditChecklist(c)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(196,181,253,0.3)', background:'transparent', color:'#c4b5fd', fontSize:11, cursor:'pointer' }}>Edit</button>
               <button onClick={() => deleteChecklist(c.id)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(248,113,113,0.3)', background:'transparent', color:'#f87171', fontSize:11, cursor:'pointer' }}>Delete</button>
             </div>
           ))}
@@ -2539,7 +2573,7 @@ function AdminPinDatabase() {
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState(null)
-  const ADMIN_EMAIL = 'waltnv702@gmail.com' // replace with your login email
+  const ADMIN_EMAIL = 'waltnv702@gmail.com'
   const [pins, setPins] = useState([])
   const [books, setBooks] = useState([])
   const [booksSubTab, setBooksSubTab] = useState('mine')
