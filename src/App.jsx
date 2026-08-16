@@ -1508,6 +1508,165 @@ function TradingPage({ user, pins, hasAccess, profile, onUpdateProfile, onUpgrad
   )
 }
 
+// ── Preloaded Pin Checklists ────────────────────────────────────────────────
+// Image lives in /public — reference by root-relative path so Vercel serves it statically
+const CHECKLISTS = [
+  {
+    id: 'hd-2026-wavea',
+    title: 'Hidden Disney 2026 Wave A',
+    image: '/pinbooks/2026-wavea.jpg',
+    pins: [
+      // Series 1: Ear Headbands (7 columns)
+      { id:'s1-1', name:'Enchanted Tiki Birds', top:12.4, left:0,        width:14.28, height:12.5 },
+      { id:'s1-2', name:'Mad Tea Party',        top:12.4, left:14.28,   width:14.28, height:12.5 },
+      { id:'s1-3', name:'Pain & Panic',         top:12.4, left:28.56,   width:14.28, height:12.5 },
+      { id:'s1-4', name:'Evil Queen',           top:12.4, left:42.84,   width:14.28, height:12.5 },
+      { id:'s1-5', name:'Snow White',           top:12.4, left:57.12,   width:14.28, height:12.5 },
+      { id:'s1-6', name:'Chaser: Sleeping Beauty', top:12.4, left:71.4, width:14.28, height:12.5 },
+      { id:'s1-7', name:'Super Chaser: Madame Leota', top:12.4, left:85.68, width:14.28, height:12.5 },
+      // Series 2: Film Anniversaries (6 columns)
+      { id:'s2-1', name:'Pongo',        top:27.4, left:0,     width:16.67, height:9.8 },
+      { id:'s2-2', name:'Mater',        top:27.4, left:16.67, width:16.67, height:9.8 },
+      { id:'s2-3', name:'Nick Wilde',   top:27.4, left:33.34, width:16.67, height:9.8 },
+      { id:'s2-4', name:'Dory',         top:27.4, left:50.01, width:16.67, height:9.8 },
+      { id:'s2-5', name:'Milo',         top:27.4, left:66.68, width:16.67, height:9.8 },
+      { id:'s2-6', name:'Chaser: Sisu', top:27.4, left:83.35, width:16.67, height:9.8 },
+      // Series 3: Castles (6 columns)
+      { id:'s3-1', name:"it's a small world",  top:39.7, left:0,     width:16.67, height:12.0 },
+      { id:'s3-2', name:'Matterhorn Bobsleds', top:39.7, left:16.67, width:16.67, height:12.0 },
+      { id:'s3-3', name:'101 Dalmatians',      top:39.7, left:33.34, width:16.67, height:12.0 },
+      { id:'s3-4', name:'Peter Pan',           top:39.7, left:50.01, width:16.67, height:12.0 },
+      { id:'s3-5', name:"Disney's Grand Californian Hotel & Spa", top:39.7, left:66.68, width:16.67, height:12.0 },
+      { id:'s3-6', name:'Chaser: Pixar Place Hotel', top:39.7, left:83.35, width:16.67, height:12.0 },
+      // Series 4: Disney Buses (6 columns)
+      { id:'s4-1', name:'Winnie-the-Pooh',        top:54.2, left:0,     width:16.67, height:12.8 },
+      { id:'s4-2', name:'Marie',                  top:54.2, left:16.67, width:16.67, height:12.8 },
+      { id:'s4-3', name:'Dumbo',                  top:54.2, left:33.34, width:16.67, height:12.8 },
+      { id:'s4-4', name:'Cheshire Cat',            top:54.2, left:50.01, width:16.67, height:12.8 },
+      { id:'s4-5', name:'Ariel',                  top:54.2, left:66.68, width:16.67, height:12.8 },
+      { id:'s4-6', name:'Chaser: Queen of Hearts', top:54.2, left:83.35, width:16.67, height:12.8 },
+      // Series 5: Cupcakes (6 columns)
+      { id:'s5-1', name:'Donald',            top:69.5, left:0,     width:16.67, height:12.8 },
+      { id:'s5-2', name:'Minnie Mouse',      top:69.5, left:16.67, width:16.67, height:12.8 },
+      { id:'s5-3', name:'Pluto',             top:69.5, left:33.34, width:16.67, height:12.8 },
+      { id:'s5-4', name:'Dale',              top:69.5, left:50.01, width:16.67, height:12.8 },
+      { id:'s5-5', name:'Angel',             top:69.5, left:66.68, width:16.67, height:12.8 },
+      { id:'s5-6', name:'Chaser: Tiki Bird', top:69.5, left:83.35, width:16.67, height:12.8 },
+      // Series 6: Holiday (6 columns)
+      { id:'s6-1', name:'Summer',             top:84.8, left:0,     width:16.67, height:12.2 },
+      { id:'s6-2', name:'Winter',             top:84.8, left:16.67, width:16.67, height:12.2 },
+      { id:'s6-3', name:'Easter',             top:84.8, left:33.34, width:16.67, height:12.2 },
+      { id:'s6-4', name:'Thanksgiving',       top:84.8, left:50.01, width:16.67, height:12.2 },
+      { id:'s6-5', name:'Halloween',          top:84.8, left:66.68, width:16.67, height:12.2 },
+      { id:'s6-6', name:'Chaser: Christmas',  top:84.8, left:83.35, width:16.67, height:12.2 },
+    ]
+  }
+]
+
+function PinChecklistViewer({ checklist, userId, onBack }) {
+  const [progress, setProgress] = useState({})
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase.from('checklist_progress').select('progress').eq('user_id', userId).eq('checklist_id', checklist.id).maybeSingle()
+      setProgress(data?.progress || {})
+      setLoading(false)
+    }
+    load()
+  }, [checklist.id, userId])
+
+  async function saveProgress(next) {
+    setProgress(next)
+    await supabase.from('checklist_progress').upsert({
+      user_id: userId, checklist_id: checklist.id, progress: next, updated_at: new Date().toISOString()
+    })
+  }
+
+  function cycleStatus(pinId) {
+    const current = progress[pinId]
+    const next = current === undefined ? 'found' : current === 'found' ? 'missing' : undefined
+    const updated = { ...progress }
+    if (next === undefined) delete updated[pinId]
+    else updated[pinId] = next
+    saveProgress(updated)
+  }
+
+  const foundCount = Object.values(progress).filter(v => v === 'found').length
+  const total = checklist.pins.length
+
+  if (loading) return <div style={{ textAlign:'center', color:'#64748b', padding:30 }}>Loading checklist...</div>
+
+  return (
+    <div style={{ padding:'8px 0' }}>
+      <button onClick={onBack} style={{ background:'none', border:'none', color:'#c4b5fd', fontSize:13, cursor:'pointer', marginBottom:10, padding:0 }}>← Back to checklists</button>
+      <div style={{ fontSize:16, fontWeight:'bold', color:'#f1f5f9', marginBottom:4 }}>{checklist.title}</div>
+      <div style={{ fontSize:12, color:'#94a3b8', marginBottom:4 }}>{foundCount} / {total} found</div>
+      <div style={{ fontSize:11, color:'#64748b', marginBottom:14 }}>Tap a pin: first tap = ✅ found, second tap = ❌ missing, third tap = clear</div>
+
+      <div style={{ position:'relative', width:'100%', lineHeight:0, borderRadius:12, overflow:'hidden', border:'1px solid rgba(255,255,255,0.1)' }}>
+        <img src={checklist.image} alt={checklist.title} style={{ width:'100%', height:'auto', display:'block' }} />
+        {checklist.pins.map(pin => {
+          const status = progress[pin.id]
+          return (
+            <button
+              key={pin.id}
+              onClick={() => cycleStatus(pin.id)}
+              title={pin.name}
+              style={{
+                position:'absolute',
+                top: `${pin.top}%`, left: `${pin.left}%`,
+                width: `${pin.width}%`, height: `${pin.height}%`,
+                background: status === 'found' ? 'rgba(52,211,153,0.28)' : status === 'missing' ? 'rgba(248,113,113,0.28)' : 'transparent',
+                border: status ? '2px solid ' + (status==='found' ? '#34d399' : '#f87171') : '2px solid transparent',
+                borderRadius:8, cursor:'pointer', padding:0
+              }}
+            >
+              {status && (
+                <span style={{
+                  position:'absolute', top:2, right:2, fontSize:16,
+                  background: status==='found' ? '#34d399' : '#f87171',
+                  color:'#0b0f1a', borderRadius:'50%', width:20, height:20,
+                  display:'flex', alignItems:'center', justifyContent:'center', fontWeight:'bold'
+                }}>
+                  {status === 'found' ? '✓' : '✕'}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function PinChecklistsPage({ userId }) {
+  const [selected, setSelected] = useState(null)
+
+  if (selected) {
+    return <PinChecklistViewer checklist={selected} userId={userId} onBack={() => setSelected(null)} />
+  }
+
+  return (
+    <div style={{ padding:'8px 0' }}>
+      <div style={{ fontSize:16, fontWeight:'bold', color:'#f1f5f9', marginBottom:4 }}>📖 Series Checklists</div>
+      <div style={{ fontSize:12, color:'#94a3b8', marginBottom:14 }}>Tap a checklist, then tap each pin as you find it.</div>
+      <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+        {CHECKLISTS.map(c => (
+          <button key={c.id} onClick={() => setSelected(c)}
+            style={{ display:'flex', gap:12, alignItems:'center', background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, padding:12, cursor:'pointer', textAlign:'left' }}>
+            <img src={c.image} alt={c.title} style={{ width:56, height:56, borderRadius:8, objectFit:'cover' }} />
+            <div>
+              <div style={{ fontSize:14, fontWeight:'bold', color:'#f1f5f9' }}>{c.title}</div>
+              <div style={{ fontSize:11, color:'#64748b' }}>{c.pins.length} pins</div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdateBook, hasAccess, onUpgrade, userId }) {
   const [newName, setNewName] = useState('')
   const [newIcon, setNewIcon] = useState('🏰')
@@ -2165,9 +2324,10 @@ function AdminPinDatabase() {
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState(null)
-  const ADMIN_EMAIL = 'waltnv702@gmail.com' // replace with your login email
+  const ADMIN_EMAIL = 'YOUR-EMAIL-HERE' // replace with your login email
   const [pins, setPins] = useState([])
   const [books, setBooks] = useState([])
+  const [booksSubTab, setBooksSubTab] = useState('mine')
   const [tab, setTab] = useState('have')
   const [pinsLoading, setPinsLoading] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
@@ -2395,7 +2555,26 @@ export default function App() {
       <div className="main-content">
         {tab==='have'    && <PinList pins={pins} listType="have" onDelete={deletePin} onMove={movePin} onToggleTrader={toggleTrader} loading={pinsLoading} userId={user.id} />}
         {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} onToggleTrader={toggleTrader} loading={pinsLoading} userId={user.id} />}
-        {tab==='books'   && <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} onUpdateBook={updateBook} hasAccess={hasAccess} onUpgrade={handleUpgrade} userId={user.id} />}
+        {tab==='books'   && (
+          <div>
+            <div style={{ display:'flex', gap:8, marginBottom:14 }}>
+              <button onClick={() => setBooksSubTab('mine')}
+                style={{ flex:1, padding:'8px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', cursor:'pointer', fontSize:12, fontWeight:'bold',
+                  background: booksSubTab==='mine' ? '#7c3aed' : 'transparent', color: booksSubTab==='mine' ? '#fff' : '#94a3b8' }}>
+                My Books
+              </button>
+              <button onClick={() => setBooksSubTab('checklists')}
+                style={{ flex:1, padding:'8px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', cursor:'pointer', fontSize:12, fontWeight:'bold',
+                  background: booksSubTab==='checklists' ? '#7c3aed' : 'transparent', color: booksSubTab==='checklists' ? '#fff' : '#94a3b8' }}>
+                Checklists
+              </button>
+            </div>
+            {booksSubTab === 'mine'
+              ? <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} onUpdateBook={updateBook} hasAccess={hasAccess} onUpgrade={handleUpgrade} userId={user.id} />
+              : <PinChecklistsPage userId={user.id} />
+            }
+          </div>
+        )}
         {tab==='add'     && (multiScan && hasAccess ? <MultiPinScanner onAddMultiple={addMultiplePins} userId={user.id} onClose={() => setMultiScan(false)} /> : <AddPinForm onAdd={addPin} userId={user.id} hasAccess={hasAccess} onUpgrade={handleUpgrade} onMultiScan={() => setMultiScan(true)} />)}
         {tab==='admin'   && user.email === ADMIN_EMAIL && <AdminPinDatabase />}
         {tab==='trade'   && <TradingPage user={user} pins={pins} hasAccess={hasAccess} profile={profile} onUpdateProfile={updateProfile} onUpgrade={handleUpgrade} onLegal={setLegalPage} />}
