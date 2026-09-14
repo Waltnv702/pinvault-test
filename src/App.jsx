@@ -1203,20 +1203,24 @@ function MysteryBoxForm({ onSave, onCancel, userId, editingBox }) {
   )
 }
 
-function MysteryBoxCard({ box, onEdit, onDelete }) {
+function MysteryBoxCard({ box, onView, onEdit, onDelete }) {
   const [confirmDel, setConfirmDel] = useState(false)
   return (
     <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:16, overflow:'hidden' }}>
-      <div className="card-img" style={{ background:'linear-gradient(135deg,#312e81,#4c1d95)' }}>
+      <div className="card-img" style={{ background:'linear-gradient(135deg,#312e81,#4c1d95)', cursor:'pointer' }} onClick={() => onView(box)}>
         {box.front_image_url
           ? <img src={box.front_image_url} alt={box.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
           : <span style={{ fontSize:36, opacity:.5 }}>🎁</span>}
       </div>
       <div style={{ padding:'10px 12px' }}>
-        <div className="card-name">{box.name}</div>
+        <div className="card-name" style={{ cursor:'pointer' }} onClick={() => onView(box)}>{box.name}</div>
         {box.year && <div className="card-series">{box.year}</div>}
         {box.notes && <div className="card-desc">{box.notes}</div>}
         <div style={{ display:'flex', gap:8, marginTop:8 }}>
+          <button onClick={() => onView(box)}
+            style={{ flex:1, padding:'8px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:11, fontWeight:'bold' }}>
+            👁️ View
+          </button>
           <button onClick={() => onEdit(box)}
             style={{ flex:1, padding:'8px', borderRadius:8, border:'1px solid rgba(124,58,237,0.4)', background:'rgba(124,58,237,0.15)', color:'#c4b5fd', cursor:'pointer', fontSize:11, fontWeight:'bold' }}>
             ✏️ Edit
@@ -1238,9 +1242,88 @@ function MysteryBoxCard({ box, onEdit, onDelete }) {
   )
 }
 
+function MysteryBoxViewer({ box, onBack, onEdit, onDelete }) {
+  const photos = [
+    box.front_image_url && { label:'Front', url:box.front_image_url },
+    box.back_image_url && { label:'Back', url:box.back_image_url },
+    ...(box.side_image_urls || []).map((url, i) => ({ label:`Side ${i+1}`, url })),
+  ].filter(Boolean)
+  const [activeIdx, setActiveIdx] = useState(0)
+  const [confirmDel, setConfirmDel] = useState(false)
+  const active = photos[activeIdx]
+
+  return (
+    <div className="fade-up" style={{ maxWidth:560, margin:'0 auto' }}>
+      <button onClick={onBack}
+        style={{ background:'transparent', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:13, fontWeight:'bold', marginBottom:14, padding:0 }}>
+        ← Back to Mystery Boxes
+      </button>
+
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:10, marginBottom:14 }}>
+        <div>
+          <div className="page-title" style={{ marginBottom:2 }}>{box.name}</div>
+          {box.year && <div style={{ color:'#a78bfa', fontSize:12, fontWeight:600 }}>{box.year}</div>}
+        </div>
+        <div style={{ display:'flex', gap:8, flexShrink:0 }}>
+          <button onClick={() => onEdit(box)}
+            style={{ padding:'8px 12px', borderRadius:8, border:'1px solid rgba(124,58,237,0.4)', background:'rgba(124,58,237,0.15)', color:'#c4b5fd', cursor:'pointer', fontSize:11, fontWeight:'bold' }}>
+            ✏️ Edit
+          </button>
+          {confirmDel ? (
+            <button onClick={() => onDelete(box)}
+              style={{ padding:'8px 12px', borderRadius:8, border:'1px solid rgba(220,38,38,0.5)', background:'rgba(220,38,38,0.25)', color:'#fca5a5', cursor:'pointer', fontSize:11, fontWeight:'bold' }}>
+              Confirm?
+            </button>
+          ) : (
+            <button onClick={() => setConfirmDel(true)}
+              style={{ padding:'8px 12px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:11, fontWeight:'bold' }}>
+              🗑️ Delete
+            </button>
+          )}
+        </div>
+      </div>
+
+      {photos.length === 0 ? (
+        <div style={{ textAlign:'center', padding:'50px 0', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:16, marginBottom:16 }}>
+          <div style={{ fontSize:44, marginBottom:10, opacity:.4 }}>🎁</div>
+          <div style={{ color:'#64748b', fontSize:14 }}>No photos added yet for this box.</div>
+        </div>
+      ) : (
+        <>
+          <div style={{ position:'relative', width:'100%', aspectRatio:'1', borderRadius:16, overflow:'hidden', border:'2px solid rgba(124,58,237,0.5)', background:'rgba(0,0,0,0.3)', marginBottom:10 }}>
+            <img src={active.url} alt={active.label} style={{ width:'100%', height:'100%', objectFit:'contain' }} />
+            <div style={{ position:'absolute', bottom:8, left:8, background:'rgba(15,10,30,0.85)', color:'#e2d9f3', fontSize:11, fontWeight:'bold', padding:'4px 10px', borderRadius:20 }}>
+              {active.label}
+            </div>
+          </div>
+          {photos.length > 1 && (
+            <div style={{ display:'flex', gap:8, marginBottom:18, overflowX:'auto', paddingBottom:4 }}>
+              {photos.map((p, i) => (
+                <button key={i} onClick={() => setActiveIdx(i)}
+                  style={{ flexShrink:0, width:60, height:60, padding:0, borderRadius:10, overflow:'hidden', cursor:'pointer',
+                    border:`2px solid ${i===activeIdx ? '#7c3aed' : 'rgba(255,255,255,0.15)'}` }}>
+                  <img src={p.url} alt={p.label} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {box.notes && (
+        <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:16, padding:'16px 18px' }}>
+          <div style={{ fontSize:11, fontWeight:'bold', color:'#a78bfa', marginBottom:6, letterSpacing:.5 }}>NOTES</div>
+          <div style={{ color:'#cbd5e1', fontSize:13, lineHeight:1.5, whiteSpace:'pre-wrap' }}>{box.notes}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MysteryBoxesPage({ boxes, userId, onAdd, onUpdate, onDelete, loading }) {
-  const [mode, setMode] = useState('list') // 'list' | 'add' | 'edit'
+  const [mode, setMode] = useState('list') // 'list' | 'add' | 'edit' | 'view'
   const [editingBox, setEditingBox] = useState(null)
+  const [viewingBox, setViewingBox] = useState(null)
   const [search, setSearch] = useState('')
 
   async function handleSave(data) {
@@ -1248,11 +1331,22 @@ function MysteryBoxesPage({ boxes, userId, onAdd, onUpdate, onDelete, loading })
     else await onAdd(data)
     setMode('list'); setEditingBox(null)
   }
-  function startEdit(box) { setEditingBox(box); setMode('edit') }
+  function startEdit(box) { setEditingBox(box); setViewingBox(null); setMode('edit') }
+  function startView(box) { setViewingBox(box); setMode('view') }
+  async function handleDelete(box) {
+    await onDelete(box)
+    if (viewingBox?.id === box.id) { setViewingBox(null); setMode('list') }
+  }
 
   if (mode === 'add' || mode === 'edit') {
     return <MysteryBoxForm userId={userId} editingBox={mode==='edit' ? editingBox : null}
       onSave={handleSave} onCancel={() => { setMode('list'); setEditingBox(null) }} />
+  }
+
+  if (mode === 'view' && viewingBox) {
+    // Keep the viewed box's data fresh (e.g. after an edit) by pulling the latest copy from the list
+    const current = boxes.find(b => b.id === viewingBox.id) || viewingBox
+    return <MysteryBoxViewer box={current} onBack={() => { setMode('list'); setViewingBox(null) }} onEdit={startEdit} onDelete={handleDelete} />
   }
 
   const filtered = boxes.filter(b =>
@@ -1287,7 +1381,7 @@ function MysteryBoxesPage({ boxes, userId, onAdd, onUpdate, onDelete, loading })
         </div>
       ) : (
         <div className="pin-grid">
-          {filtered.map(box => <MysteryBoxCard key={box.id} box={box} onEdit={startEdit} onDelete={onDelete} />)}
+          {filtered.map(box => <MysteryBoxCard key={box.id} box={box} onView={startView} onEdit={startEdit} onDelete={handleDelete} />)}
         </div>
       )}
     </div>
