@@ -1054,6 +1054,246 @@ function PinList({ pins, listType, onDelete, onMove, onToggleTrader, loading, us
   )
 }
 
+// ── Mystery Boxes ────────────────────────────────────────────────────────────
+function BoxImageSlot({ label, preview, onFile, onRemove }) {
+  return (
+    <div style={{ marginBottom:14 }}>
+      <div style={{ fontSize:11, fontWeight:'bold', color:'#a78bfa', marginBottom:6, letterSpacing:.5 }}>{label}</div>
+      {preview ? (
+        <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+          <div style={{ width:72, height:72, borderRadius:10, overflow:'hidden', border:'2px solid rgba(124,58,237,0.5)', flexShrink:0 }}>
+            <img src={preview} alt={label} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+          </div>
+          <button type="button" onClick={onRemove}
+            style={{ padding:'7px 12px', border:'1px solid rgba(255,99,99,0.3)', borderRadius:8, background:'rgba(220,38,38,0.1)', color:'#f87171', cursor:'pointer', fontSize:12 }}>
+            Remove
+          </button>
+        </div>
+      ) : (
+        <div style={{ display:'flex', gap:8 }}>
+          <label style={{ flex:1, display:'block', textAlign:'center', padding:'11px 6px', border:'1px dashed rgba(124,58,237,0.4)', borderRadius:10, color:'#c4b5fd', cursor:'pointer', fontSize:12, fontWeight:600 }}>
+            📷 Camera
+            <input type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={e => { onFile(e.target.files[0]); e.target.value='' }} />
+          </label>
+          <label style={{ flex:1, display:'block', textAlign:'center', padding:'11px 6px', border:'1px dashed rgba(255,255,255,0.2)', borderRadius:10, color:'#94a3b8', cursor:'pointer', fontSize:12, fontWeight:600 }}>
+            📁 Library
+            <input type="file" accept="image/*" style={{ display:'none' }} onChange={e => { onFile(e.target.files[0]); e.target.value='' }} />
+          </label>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MysteryBoxForm({ onSave, onCancel, userId, editingBox }) {
+  const [name, setName] = useState(editingBox?.name || '')
+  const [year, setYear] = useState(editingBox?.year ? String(editingBox.year) : '')
+  const [notes, setNotes] = useState(editingBox?.notes || '')
+  const [front, setFront] = useState({ file:null, preview: editingBox?.front_image_url || '' })
+  const [back, setBack] = useState({ file:null, preview: editingBox?.back_image_url || '' })
+  const [sides, setSides] = useState(() => (editingBox?.side_image_urls || []).map(url => ({ file:null, preview:url })))
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  function readFile(file, cb) {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => cb(ev.target.result)
+    reader.readAsDataURL(file)
+  }
+  function handleFrontFile(file) { readFile(file, preview => setFront({ file, preview })) }
+  function handleBackFile(file) { readFile(file, preview => setBack({ file, preview })) }
+  function handleSideFile(idx, file) {
+    readFile(file, preview => setSides(prev => prev.map((s,i) => i===idx ? { file, preview } : s)))
+  }
+  function addSideSlot() { if (sides.length < 4) setSides(prev => [...prev, { file:null, preview:'' }]) }
+  function removeSideSlot(idx) { setSides(prev => prev.filter((_,i) => i!==idx)) }
+
+  async function uploadIfNeeded(imgObj, tag) {
+    if (!imgObj.file) return imgObj.preview || null
+    const ext = (imgObj.file.name.split('.').pop() || 'jpg').toLowerCase()
+    const path = `${userId}/mysterybox-${Date.now()}-${tag}.${ext}`
+    const { error: upErr } = await supabase.storage.from('pin-images').upload(path, imgObj.file)
+    if (upErr) throw upErr
+    const { data } = supabase.storage.from('pin-images').getPublicUrl(path)
+    return data.publicUrl
+  }
+
+  async function submit() {
+    if (!name.trim()) { setError('Mystery Box Name is required.'); return }
+    setLoading(true); setError('')
+    try {
+      const frontUrl = await uploadIfNeeded(front, 'front')
+      const backUrl = await uploadIfNeeded(back, 'back')
+      const sideUrls = []
+      for (let i=0; i<sides.length; i++) {
+        const url = await uploadIfNeeded(sides[i], `side${i+1}`)
+        if (url) sideUrls.push(url)
+      }
+      await onSave({
+        id: editingBox?.id,
+        name: name.trim(),
+        year: year.trim() ? parseInt(year.trim(), 10) : null,
+        notes: notes.trim(),
+        front_image_url: frontUrl,
+        back_image_url: backUrl,
+        side_image_urls: sideUrls,
+      })
+    } catch (err) {
+      setError('Save failed: ' + err.message)
+      setLoading(false)
+    }
+  }
+
+  const lbl = { display:'block', fontSize:12, fontWeight:'bold', color:'#a78bfa', marginBottom:6, letterSpacing:.5 }
+
+  return (
+    <div className="fade-up" style={{ maxWidth:560, margin:'0 auto' }}>
+      <div className="page-title">{editingBox ? '✏️ Edit Mystery Box' : '🎁 Add Mystery Box'}</div>
+      <div style={{ color:'#94a3b8', fontSize:12, marginBottom:18 }}>
+        Track sealed or opened mystery pin boxes with photos of every side.
+      </div>
+
+      <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:20, padding:'22px 18px' }}>
+        <label style={lbl}>Mystery Box Name *</label>
+        <input className="field-input" placeholder="e.g. Park Life Mystery Box" value={name} onChange={e => setName(e.target.value)} />
+
+        <label style={lbl}>Year</label>
+        <input className="field-input" type="number" placeholder="e.g. 2024" value={year} onChange={e => setYear(e.target.value)} />
+
+        <label style={lbl}>Notes</label>
+        <textarea className="field-input" style={{ resize:'vertical', minHeight:80 }} rows={3}
+          placeholder="Series, number of pins inside, chaser odds, where purchased..."
+          value={notes} onChange={e => setNotes(e.target.value)} />
+
+        <div style={{ height:1, background:'rgba(255,255,255,0.08)', margin:'6px 0 18px' }} />
+
+        <BoxImageSlot label="FRONT OF BOX" preview={front.preview} onFile={handleFrontFile} onRemove={() => setFront({ file:null, preview:'' })} />
+        <BoxImageSlot label="BACK OF BOX" preview={back.preview} onFile={handleBackFile} onRemove={() => setBack({ file:null, preview:'' })} />
+
+        <div style={{ fontSize:11, fontWeight:'bold', color:'#a78bfa', marginBottom:6, letterSpacing:.5, marginTop:4 }}>
+          SIDE PANELS (optional)
+        </div>
+        {sides.map((s, i) => (
+          <BoxImageSlot key={i} label={`SIDE ${i+1}`} preview={s.preview} onFile={f => handleSideFile(i, f)} onRemove={() => removeSideSlot(i)} />
+        ))}
+        {sides.length < 4 && (
+          <button type="button" onClick={addSideSlot}
+            style={{ width:'100%', padding:'10px', borderRadius:10, border:'1px dashed rgba(255,255,255,0.2)', background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:12, fontWeight:600, marginBottom:16 }}>
+            ＋ Add Side Panel Photo
+          </button>
+        )}
+
+        {error && <div style={{ color:'#f87171', fontSize:13, marginBottom:12 }}>⚠️ {error}</div>}
+
+        <div style={{ display:'flex', gap:10 }}>
+          {onCancel && (
+            <button onClick={onCancel} disabled={loading}
+              style={{ flex:1, padding:'15px', borderRadius:13, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:14, fontWeight:'bold' }}>
+              Cancel
+            </button>
+          )}
+          <button className="primary-btn" onClick={submit} disabled={loading}
+            style={{ flex:2, background: loading ? 'rgba(124,58,237,0.4)' : 'linear-gradient(135deg,#7c3aed,#db2777)' }}>
+            {loading ? '⏳ Saving...' : editingBox ? '✓ Save Changes' : '✨ Add Mystery Box'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MysteryBoxCard({ box, onEdit, onDelete }) {
+  const [confirmDel, setConfirmDel] = useState(false)
+  return (
+    <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:16, overflow:'hidden' }}>
+      <div className="card-img" style={{ background:'linear-gradient(135deg,#312e81,#4c1d95)' }}>
+        {box.front_image_url
+          ? <img src={box.front_image_url} alt={box.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+          : <span style={{ fontSize:36, opacity:.5 }}>🎁</span>}
+      </div>
+      <div style={{ padding:'10px 12px' }}>
+        <div className="card-name">{box.name}</div>
+        {box.year && <div className="card-series">{box.year}</div>}
+        {box.notes && <div className="card-desc">{box.notes}</div>}
+        <div style={{ display:'flex', gap:8, marginTop:8 }}>
+          <button onClick={() => onEdit(box)}
+            style={{ flex:1, padding:'8px', borderRadius:8, border:'1px solid rgba(124,58,237,0.4)', background:'rgba(124,58,237,0.15)', color:'#c4b5fd', cursor:'pointer', fontSize:11, fontWeight:'bold' }}>
+            ✏️ Edit
+          </button>
+          {confirmDel ? (
+            <button onClick={() => onDelete(box)}
+              style={{ flex:1, padding:'8px', borderRadius:8, border:'1px solid rgba(220,38,38,0.5)', background:'rgba(220,38,38,0.25)', color:'#fca5a5', cursor:'pointer', fontSize:11, fontWeight:'bold' }}>
+              Confirm?
+            </button>
+          ) : (
+            <button onClick={() => setConfirmDel(true)}
+              style={{ flex:1, padding:'8px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', cursor:'pointer', fontSize:11, fontWeight:'bold' }}>
+              🗑️ Delete
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MysteryBoxesPage({ boxes, userId, onAdd, onUpdate, onDelete, loading }) {
+  const [mode, setMode] = useState('list') // 'list' | 'add' | 'edit'
+  const [editingBox, setEditingBox] = useState(null)
+  const [search, setSearch] = useState('')
+
+  async function handleSave(data) {
+    if (data.id) await onUpdate(data)
+    else await onAdd(data)
+    setMode('list'); setEditingBox(null)
+  }
+  function startEdit(box) { setEditingBox(box); setMode('edit') }
+
+  if (mode === 'add' || mode === 'edit') {
+    return <MysteryBoxForm userId={userId} editingBox={mode==='edit' ? editingBox : null}
+      onSave={handleSave} onCancel={() => { setMode('list'); setEditingBox(null) }} />
+  }
+
+  const filtered = boxes.filter(b =>
+    b.name.toLowerCase().includes(search.toLowerCase()) ||
+    (b.notes||'').toLowerCase().includes(search.toLowerCase()) ||
+    String(b.year||'').includes(search)
+  )
+
+  return (
+    <div className="fade-up">
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:4 }}>
+        <div className="page-title" style={{ marginBottom:0 }}>🎁 Mystery Boxes</div>
+        <button onClick={() => setMode('add')}
+          style={{ background:'linear-gradient(135deg,#7c3aed,#db2777)', border:'none', borderRadius:10, padding:'8px 16px', color:'#fff', cursor:'pointer', fontSize:12, fontWeight:'bold' }}>
+          ＋ Add Box
+        </button>
+      </div>
+      <div style={{ display:'inline-block', background:'rgba(124,58,237,0.3)', border:'1px solid rgba(124,58,237,0.5)', borderRadius:20, padding:'3px 14px', fontSize:12, color:'#c4b5fd', marginBottom:14, marginTop:4 }}>
+        {loading ? 'Loading...' : `${filtered.length} box${filtered.length!==1?'es':''}`}
+      </div>
+      <input className="search-bar" placeholder="🔍 Search mystery boxes..." value={search} onChange={e => setSearch(e.target.value)} />
+      {loading ? (
+        <div style={{ textAlign:'center', padding:'60px 0', color:'#64748b' }}>
+          <div style={{ fontSize:36, marginBottom:12 }}>⏳</div>Loading mystery boxes...
+        </div>
+      ) : filtered.length===0 ? (
+        <div style={{ textAlign:'center', padding:'60px 0' }}>
+          <div style={{ fontSize:54, marginBottom:14, opacity:.4 }}>🎁</div>
+          <div style={{ color:'#64748b', fontSize:15 }}>
+            {search ? 'No mystery boxes match your search.' : 'No mystery boxes yet — add your first one!'}
+          </div>
+        </div>
+      ) : (
+        <div className="pin-grid">
+          {filtered.map(box => <MysteryBoxCard key={box.id} box={box} onEdit={startEdit} onDelete={onDelete} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Profile ───────────────────────────────────────────────────────────────────
 function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade, profile, onUpdateProfile, onLegal }) {
   const isPaid = subscription?.status === 'active'
@@ -2664,6 +2904,7 @@ export default function App() {
   const ADMIN_EMAIL = 'waltnv702@gmail.com'
   const [pins, setPins] = useState([])
   const [books, setBooks] = useState([])
+  const [mysteryBoxes, setMysteryBoxes] = useState([])
   const [booksSubTab, setBooksSubTab] = useState('mine')
   const [tab, setTab] = useState('have')
   const [pinsLoading, setPinsLoading] = useState(false)
@@ -2682,18 +2923,20 @@ export default function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') { setResetMode(true); return }
       if (session?.user) { setUser(session.user); fetchAll(session.user.id) }
-      else { setUser(null); setPins([]); setBooks([]) }
+      else { setUser(null); setPins([]); setBooks([]); setMysteryBoxes([]) }
     })
     return () => listener.subscription.unsubscribe()
   }, [])
 
   async function fetchAll(uid) {
     setPinsLoading(true)
-    const [pinsRes, booksRes, pinBooksRes] = await Promise.all([
+    const [pinsRes, booksRes, pinBooksRes, mysteryBoxesRes] = await Promise.all([
       supabase.from('pins').select('*').eq('user_id', uid).order('created_at', { ascending:false }),
       supabase.from('books').select('*').eq('user_id', uid).order('created_at', { ascending:true }),
       supabase.from('pin_books').select('*'),
+      supabase.from('mystery_boxes').select('*').eq('user_id', uid).order('created_at', { ascending:false }),
     ])
+    setMysteryBoxes(mysteryBoxesRes.data || [])
     // Fetch subscription and profile separately to handle missing rows gracefully
     const { data: subData, error: subErr } = await supabase.from('subscriptions').select('*').eq('user_id', uid).maybeSingle()
     const { data: profileData, error: profileErr } = await supabase.from('profiles').select('is_admin, trading_enabled, display_name, email').eq('id', uid).maybeSingle()
@@ -2762,6 +3005,28 @@ export default function App() {
   async function updateBook(id, updates) {
     await supabase.from('books').update(updates).eq('id', id)
     setBooks(prev => prev.map(b => b.id === id ? {...b, ...updates} : b))
+  }
+
+  async function addMysteryBox(d) {
+    const { id, ...rest } = d
+    const { data, error } = await supabase.from('mystery_boxes').insert([{ ...rest, user_id:user.id }]).select().single()
+    if (!error && data) setMysteryBoxes(prev => [data, ...prev])
+    else if (error) console.error('Add mystery box error:', error)
+  }
+
+  async function updateMysteryBox(d) {
+    const { id, ...rest } = d
+    const { data, error } = await supabase.from('mystery_boxes').update(rest).eq('id', id).select().single()
+    if (!error && data) setMysteryBoxes(prev => prev.map(b => b.id === id ? data : b))
+    else if (error) console.error('Update mystery box error:', error)
+  }
+
+  async function deleteMysteryBox(box) {
+    const urls = [box.front_image_url, box.back_image_url, ...(box.side_image_urls || [])].filter(Boolean)
+    const paths = urls.filter(u => u.includes('supabase')).map(u => u.split('/pin-images/')[1]).filter(Boolean)
+    if (paths.length) await supabase.storage.from('pin-images').remove(paths)
+    await supabase.from('mystery_boxes').delete().eq('id', box.id)
+    setMysteryBoxes(prev => prev.filter(b => b.id !== box.id))
   }
 
   const hasAccess = subscription?.status === 'active' || subscription?.is_admin === true
@@ -2844,6 +3109,7 @@ export default function App() {
     { id:'have',    icon:'🎒', label:'Collection', count:haveCount },
     { id:'want',    icon:'⭐', label:'Wish List',  count:wantCount },
     { id:'books',   icon:'📚', label:'Books',      count:books.length > 0 ? books.length : null },
+    { id:'mystery', icon:'🎁', label:'Mystery Boxes', count:mysteryBoxes.length > 0 ? mysteryBoxes.length : null },
     { id:'add',     icon:'＋', label:'Add Pin' },
     { id:'trade',   icon:'🤝', label:'Trade' },
     { id:'profile', icon:'👤', label:'Profile' },
@@ -2912,6 +3178,7 @@ export default function App() {
             }
           </div>
         )}
+        {tab==='mystery' && <MysteryBoxesPage boxes={mysteryBoxes} userId={user.id} onAdd={addMysteryBox} onUpdate={updateMysteryBox} onDelete={deleteMysteryBox} loading={pinsLoading} />}
         {tab==='add'     && (multiScan && hasAccess ? <MultiPinScanner onAddMultiple={addMultiplePins} userId={user.id} onClose={() => setMultiScan(false)} /> : <AddPinForm onAdd={addPin} userId={user.id} hasAccess={hasAccess} onUpgrade={handleUpgrade} onMultiScan={() => setMultiScan(true)} />)}
         {tab==='admin'   && user.email === ADMIN_EMAIL && <AdminPinDatabase />}
         {tab==='checklist-admin' && user.email === ADMIN_EMAIL && <AdminChecklistBuilder />}
