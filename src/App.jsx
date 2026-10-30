@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabase'
 
+// Headers for our /api endpoints: includes the signed-in user's token so the server can verify who is calling
+async function authHeaders() {
+  const { data } = await supabase.auth.getSession()
+  const token = data?.session?.access_token
+  return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+}
+
 const COLORS = ['#7c3aed','#db2777','#0891b2','#d97706','#059669','#be185d']
 function hashCode(str) {
   let h = 0
@@ -87,6 +94,10 @@ const css = `
     position: relative;
   }
   .nav-tab-btn.active { color: #a78bfa; }
+  .more-backdrop { position: fixed; inset: 0; z-index: 140; background: rgba(0,0,0,0.5); }
+  .more-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 150; background: #1a1040; border-top: 1px solid rgba(124,58,237,0.4); border-radius: 18px 18px 0 0; padding: 14px 14px calc(80px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .more-item { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 6px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #cbd5e1; font-size: 12px; font-weight: bold; cursor: pointer; }
+  .more-item.active { border-color: rgba(124,58,237,0.6); color: #e2d9f3; background: rgba(124,58,237,0.2); }
   .nav-tab-btn .nav-icon { font-size: 21px; line-height: 1; }
 
   /* Pin grid */
@@ -166,6 +177,9 @@ const css = `
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 // ── Reset Password Screen ─────────────────────────────────────────────────────
+// Master switch for the trading feature. Flip to true to bring trading back.
+const TRADING_ENABLED = false
+
 function ResetPasswordScreen({ onDone }) {
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
@@ -242,8 +256,8 @@ function LegalPage({ page, onBack }) {
               <Section title="5. Subscriptions and Payments">
                 CastlePins offers a free tier and a paid Castle Pass subscription ($4.99/month or $44.99/year). Subscriptions renew automatically and may be cancelled at any time. Payments are processed by Stripe, Inc. All fees are non-refundable except as required by law.
               </Section>
-              <Section title="6. Pin Trading">
-                Trading features are available to Castle Pass subscribers who opt in. By opting in, you consent to your email address being shared with trade partners to facilitate trades. CastlePins is not a party to any trade and is not responsible for the condition, authenticity, delivery, or completion of traded items. You are solely responsible for any trade you enter into.
+              <Section title={TRADING_ENABLED ? "6. Pin Trading" : "6. Community Features"}>
+                {!TRADING_ENABLED ? "CastlePins may introduce community features in the future. Any such features will be subject to additional terms, which you will be asked to accept before using them." : "Trading features are available to Castle Pass subscribers who opt in. By opting in, you consent to your email address being shared with trade partners to facilitate trades. CastlePins is not a party to any trade and is not responsible for the condition, authenticity, delivery, or completion of traded items. You are solely responsible for any trade you enter into."}
               </Section>
               <Section title="7. User Content">
                 You retain ownership of content you upload. By uploading, you grant CastlePins a license to display and store your content to operate the App. You agree not to upload unlawful, offensive, or infringing content.
@@ -267,13 +281,13 @@ function LegalPage({ page, onBack }) {
                 We collect your email address, password (stored securely as a hash), optional display name, and pin collection data including photos you upload. Payment details are handled by Stripe and never stored by CastlePins.
               </Section>
               <Section title="2. How We Use Your Information">
-                We use your information to provide and improve the App, process payments, send transactional emails (such as password resets), facilitate pin trading, and respond to support requests.
+                We use your information to provide and improve the App, process payments, send transactional emails (such as password resets), {TRADING_ENABLED ? 'facilitate pin trading, ' : ''}and respond to support requests.
               </Section>
-              <Section title="3. Pin Trading and Email Sharing">
-                If you enable pin trading, your email address may be shared with users who initiate or receive trade requests with you. This is limited to trade partners and used solely to facilitate trades. You may disable trading at any time in your Profile settings.
+              <Section title={TRADING_ENABLED ? "3. Pin Trading and Email Sharing" : "3. Your Email Address"}>
+                {!TRADING_ENABLED ? "Your email address is used only for your account, billing, and service messages. We do not display your email address to other users." : "If you enable pin trading, your email address may be shared with users who initiate or receive trade requests with you. This is limited to trade partners and used solely to facilitate trades. You may disable trading at any time in your Profile settings."}
               </Section>
               <Section title="4. Information We Share">
-                We do not sell your personal information. We share data only with Stripe (payments), Supabase (database), Vercel (hosting), and Anthropic (AI identification) — all governed by their own privacy policies — and with trade partners as described above.
+                We do not sell your personal information. We share data only with Stripe (payments), Supabase (database), Vercel (hosting), and Anthropic (AI identification) — all governed by their own privacy policies.{TRADING_ENABLED ? ' We also share limited information with trade partners as described above.' : ''}
               </Section>
               <Section title="5. Data Security">
                 Your data is stored securely using industry-standard encryption. While we take reasonable precautions, no internet transmission is 100% secure.
@@ -337,8 +351,15 @@ function AuthScreen({ onLogin, onLegal }) {
     setLoading(true); setError('')
     try {
       if (mode === 'register') {
-        const { error } = await supabase.auth.signUp({ email, password: pw })
+        const { data, error } = await supabase.auth.signUp({ email, password: pw })
         if (error) throw error
+        // Supabase returns no error for an existing email; the user object comes back with no identities
+        if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+          setError('An account with this email already exists. Please sign in, or use "Forgot your password?" to reset it.')
+          setMode('login')
+          setLoading(false)
+          return
+        }
         setMsg('✅ Account created! Check your email to confirm, then sign in.')
         setMode('login')
       } else {
@@ -425,7 +446,7 @@ function PinCard({ pin, onDelete, onMove, onToggleTrader, showDesc=true }) {
           ? <img src={pin.image_url} alt={pin.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e => e.target.style.display='none'} />
           : <span style={{ fontSize:36, opacity:.65 }}>📌</span>}
         <div style={{ position:'absolute', top:6, right:6, display:'flex', gap:4 }}>
-          {pin.is_trader && (
+          {TRADING_ENABLED && pin.is_trader && (
             <div style={{ background:'rgba(16,185,129,0.85)', border:'1px solid rgba(16,185,129,0.5)', borderRadius:5, padding:'2px 5px', fontSize:9, fontWeight:'bold', color:'#fff' }}>
               TRADER
             </div>
@@ -449,7 +470,7 @@ function PinCard({ pin, onDelete, onMove, onToggleTrader, showDesc=true }) {
             style={{ flex:1, padding:'7px 0', border:'1px solid rgba(124,58,237,0.4)', borderRadius:7, background:'rgba(124,58,237,0.15)', color:'#c4b5fd', cursor:'pointer', fontSize:11, fontWeight:600 }}>
             {pin.list==='have'?'→ Wish List':'→ Collection'}
           </button>
-          {onToggleTrader && (
+          {TRADING_ENABLED && onToggleTrader && (
             <button onClick={() => onToggleTrader(pin.id, !pin.is_trader)}
               title={pin.is_trader ? 'Remove from traders' : 'Mark as trader'}
               style={{ width:28, height:28, border:`1px solid ${pin.is_trader?'rgba(16,185,129,0.4)':'rgba(255,255,255,0.15)'}`, borderRadius:7, background:pin.is_trader?'rgba(16,185,129,0.2)':'rgba(255,255,255,0.05)', color:pin.is_trader?'#34d399':'#64748b', cursor:'pointer', fontSize:12, flexShrink:0 }}>🤝</button>
@@ -475,6 +496,7 @@ function MultiPinScanner({ onAddMultiple, userId, onClose }) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [list, setList] = useState('have')
+  const [scanImage, setScanImage] = useState(null) // compressed copy of the photo, saved with the pins
   const fileRef = useRef()
 
   function compressAndScan(file) {
@@ -492,7 +514,9 @@ function MultiPinScanner({ onAddMultiple, userId, onClose }) {
         }
         canvas.width = width; canvas.height = height
         canvas.getContext('2d').drawImage(img, 0, 0, width, height)
-        scanPins(canvas.toDataURL('image/jpeg', 0.85))
+        const compressed = canvas.toDataURL('image/jpeg', 0.85)
+        setScanImage(compressed)
+        scanPins(compressed)
       }
       img.src = ev.target.result
     }
@@ -504,7 +528,7 @@ function MultiPinScanner({ onAddMultiple, userId, onClose }) {
     try {
       const res = await fetch('/api/identify-pins-multi', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({ image: imageData })
       })
       if (!res.ok) throw new Error(`Server error: ${res.status}`)
@@ -537,7 +561,7 @@ function MultiPinScanner({ onAddMultiple, userId, onClose }) {
     if (confirmed.length === 0) return
     setSaving(true)
     const pinsToAdd = confirmed.map(i => results.pins[i])
-    await onAddMultiple(pinsToAdd, list)
+    await onAddMultiple(pinsToAdd, list, scanImage)
     setSaved(true)
     setTimeout(() => {
       setSaved(false); setResults(null); setPreview(null)
@@ -767,7 +791,7 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
     try {
       const response = await fetch('/api/identify-pin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({ image: imageData })
       })
       if (!response.ok) {
@@ -1393,6 +1417,20 @@ function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade, prof
   const isPaid = subscription?.status === 'active'
   const isAdmin = subscription?.is_admin === true
   const hasAccess = isPaid || isAdmin
+
+  async function deleteMyAccount() {
+    const sub = isPaid && !isAdmin ? '\n\nYour Castle Pass subscription will also be cancelled.' : ''
+    if (!window.confirm('Permanently delete your account?\n\nAll of your pins, books, mystery boxes, photos and settings will be erased. This cannot be undone.' + sub)) return
+    if (window.prompt('Type DELETE to confirm.') !== 'DELETE') return
+    try {
+      const res = await fetch('/api/delete-account', { method:'POST', headers: await authHeaders() })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not delete account')
+      await supabase.auth.signOut()
+    } catch (err) {
+      window.alert('Account deletion failed: ' + err.message + '\nPlease contact support.')
+    }
+  }
   const [portalLoading, setPortalLoading] = useState(false)
 
   async function openPortal() {
@@ -1401,7 +1439,7 @@ function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade, prof
     try {
       const res = await fetch('/api/customer-portal', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({ customerId: subscription.stripe_customer_id })
       })
       const { url } = await res.json()
@@ -1444,7 +1482,7 @@ function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade, prof
           <div style={{ background:'linear-gradient(135deg,rgba(124,58,237,0.2),rgba(219,39,119,0.2))', border:'1px solid rgba(124,58,237,0.4)', borderRadius:14, padding:'18px', marginBottom:16 }}>
             <div style={{ fontSize:16, fontWeight:'bold', color:'#f9fafb', marginBottom:6 }}>✨ Upgrade to Castle Pass</div>
             <div style={{ fontSize:12, color:'#c4b5fd', marginBottom:14, lineHeight:1.6 }}>
-              Unlock AI pin identifier, unlimited pin books, and trading access.
+              Unlock the AI pin identifier, multi-pin scanning, and unlimited pin books.
             </div>
             <div style={{ display:'flex', gap:8 }}>
               <button onClick={() => onUpgrade('monthly')}
@@ -1467,7 +1505,7 @@ function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade, prof
         )}
 
         {/* Trading opt-in */}
-        {hasAccess && (
+        {TRADING_ENABLED && hasAccess && (
           <div style={{ background:'rgba(255,255,255,0.03)', border:`1px solid ${profile?.trading_enabled ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.09)'}`, borderRadius:14, padding:'16px', marginBottom:12 }}>
             <div style={{ fontSize:13, fontWeight:'bold', color:'#e2d9f3', marginBottom:6 }}>🤝 Pin Trading</div>
             {profile?.trading_enabled ? (
@@ -1518,6 +1556,11 @@ function ProfilePage({ user, haveCount, wantCount, subscription, onUpgrade, prof
         <button onClick={() => supabase.auth.signOut()}
           style={{ width:'100%', padding:'14px', border:'1px solid rgba(255,99,99,0.3)', borderRadius:12, background:'rgba(220,38,38,0.1)', color:'#f87171', cursor:'pointer', fontSize:15, fontWeight:'bold' }}>
           Sign Out
+        </button>
+
+        <button onClick={deleteMyAccount}
+          style={{ width:'100%', marginTop:14, padding:'10px', border:'none', background:'none', color:'#64748b', cursor:'pointer', fontSize:12, textDecoration:'underline' }}>
+          Delete my account
         </button>
       </div>
     </div>
@@ -1604,8 +1647,8 @@ function TradingPage({ user, pins, hasAccess, profile, onUpdateProfile, onUpgrad
   async function fetchTraders() {
     setLoadingTraders(true)
     const { data } = await supabase
-      .from('profiles')
-      .select('id, display_name, email, trading_enabled')
+      .from('trader_directory')
+      .select('id, display_name, trading_enabled')
       .eq('trading_enabled', true)
       .neq('id', user.id)
     setTraders(data || [])
@@ -1652,8 +1695,7 @@ function TradingPage({ user, pins, hasAccess, profile, onUpdateProfile, onUpgrad
   function toggleOffer(id) { setOfferPins(p => p.includes(id) ? p.filter(x=>x!==id) : [...p, id]) }
 
   const filteredTraders = traders.filter(t =>
-    (t.display_name||t.email||'').toLowerCase().includes(search.toLowerCase()) ||
-    (t.email||'').toLowerCase().includes(search.toLowerCase())
+    (t.display_name||'').toLowerCase().includes(search.toLowerCase())
   )
 
   // ── Not subscribed ──
@@ -1719,7 +1761,7 @@ function TradingPage({ user, pins, hasAccess, profile, onUpdateProfile, onUpgrad
       {/* Trader info */}
       <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:14, padding:'14px', marginBottom:20 }}>
         <div style={{ fontSize:11, color:'#a78bfa', fontWeight:'bold', marginBottom:4 }}>TRADING WITH</div>
-        <div style={{ color:'#f1f5f9', fontWeight:'bold' }}>{selectedTrader.display_name || selectedTrader.email}</div>
+        <div style={{ color:'#f1f5f9', fontWeight:'bold' }}>{selectedTrader.display_name || 'Pin Trader'}</div>
       </div>
 
       {/* Pins to receive */}
@@ -1806,7 +1848,7 @@ function TradingPage({ user, pins, hasAccess, profile, onUpdateProfile, onUpgrad
         Your trader pins: <span style={{ color:'#34d399', fontWeight:'bold' }}>{myTraderPins.length}</span>
       </div>
 
-      <input className="search-bar" placeholder="🔍 Search traders by name or email..."
+      <input className="search-bar" placeholder="🔍 Search traders by name..."
         value={search} onChange={e => setSearch(e.target.value)} />
 
       {loadingTraders ? (
@@ -1823,10 +1865,10 @@ function TradingPage({ user, pins, hasAccess, profile, onUpdateProfile, onUpgrad
               style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:14, padding:'14px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
               <div style={{ display:'flex', alignItems:'center', gap:12 }}>
                 <div style={{ width:42, height:42, borderRadius:'50%', background:'linear-gradient(135deg,#7c3aed,#db2777)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, fontWeight:'bold', color:'#fff', flexShrink:0 }}>
-                  {(trader.display_name||trader.email||'?')[0].toUpperCase()}
+                  {(trader.display_name||'?')[0].toUpperCase()}
                 </div>
                 <div>
-                  <div style={{ color:'#f1f5f9', fontWeight:'bold', fontSize:14 }}>{trader.display_name || trader.email}</div>
+                  <div style={{ color:'#f1f5f9', fontWeight:'bold', fontSize:14 }}>{trader.display_name || 'Pin Trader'}</div>
                   <div style={{ color:'#64748b', fontSize:11, marginTop:2 }}>🤝 Active trader</div>
                 </div>
               </div>
@@ -2139,7 +2181,7 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
             {bookPins.length} pin{bookPins.length!==1?'s':''}
           </div>
           <div style={{ fontSize:11, color: book.is_public ? '#34d399' : '#64748b' }}>
-            {book.is_public ? '🌐 Visible to other traders' : '🔒 Only you can see this'}
+            {book.is_public ? (TRADING_ENABLED ? '🌐 Visible to other traders' : '🌐 Public') : '🔒 Only you can see this'}
           </div>
         </div>
 
@@ -2182,7 +2224,7 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
                 <div style={{ padding:'8px 10px' }}>
                   <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}>
                     <div className="card-name" style={{ marginBottom:0 }}>{pin.name}</div>
-                    {pin.is_trader && <span style={{ fontSize:9, fontWeight:'bold', color:'#34d399', background:'rgba(16,185,129,0.15)', border:'1px solid rgba(16,185,129,0.3)', borderRadius:4, padding:'1px 5px', flexShrink:0 }}>Trader</span>}
+                    {TRADING_ENABLED && pin.is_trader && <span style={{ fontSize:9, fontWeight:'bold', color:'#34d399', background:'rgba(16,185,129,0.15)', border:'1px solid rgba(16,185,129,0.3)', borderRadius:4, padding:'1px 5px', flexShrink:0 }}>Trader</span>}
                   </div>
                   {pin.series && <div className="card-series">{pin.series}</div>}
                   {showDesc && pin.description && <div className="card-desc">{pin.description}</div>}
@@ -2224,7 +2266,7 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
         )}
         {/* Public/Private toggle */}
         <div style={{ display:'flex', gap:8, marginBottom:14 }}>
-          {[{val:true, label:'🌐 Public', desc:'Visible to traders'}, {val:false, label:'🔒 Private', desc:'Only you'}].map(opt => (
+          {[{val:true, label:'🌐 Public', desc:TRADING_ENABLED ? 'Visible to traders' : 'Shareable'}, {val:false, label:'🔒 Private', desc:'Only you'}].map(opt => (
             <button key={String(opt.val)} onClick={() => setNewPublic(opt.val)}
               style={{ flex:1, padding:'10px 8px', border:`1px solid ${newPublic===opt.val ? (opt.val ? 'rgba(5,150,105,0.6)' : 'rgba(124,58,237,0.5)') : 'rgba(255,255,255,0.1)'}`, borderRadius:10, background: newPublic===opt.val ? (opt.val ? 'rgba(5,150,105,0.15)' : 'rgba(124,58,237,0.15)') : 'transparent', color: newPublic===opt.val ? (opt.val ? '#34d399' : '#c4b5fd') : '#64748b', cursor:'pointer', fontSize:12, fontWeight:600 }}>
               <div>{opt.label}</div>
@@ -2379,7 +2421,7 @@ function AdminChecklistBuilder() {
       }
       const resp = await fetch('/api/detect-pin-names', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({ image: publicUrl })
       })
       const data = await resp.json()
@@ -2593,7 +2635,7 @@ function AdminChecklistBuilder() {
   )
 }
 
-function AdminPinDatabase() {
+function AdminPinDatabase({ isAdmin = false, userId }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -2637,7 +2679,7 @@ function AdminPinDatabase() {
 
       const resp = await fetch('/api/identify-pin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({ image: pub.publicUrl })
       })
       const data = await resp.json()
@@ -2669,7 +2711,7 @@ function AdminPinDatabase() {
     try {
       const resp = await fetch('/api/ebay-lookup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({ query: ebayQuery })
       })
       const data = await resp.json()
@@ -2726,7 +2768,7 @@ function AdminPinDatabase() {
     if (imageFile) {
       setUploading(true)
       try {
-        const path = `db/${Date.now()}-${imageFile.name.replace(/\s+/g,'_')}`
+        const path = `${isAdmin ? 'db' : userId}/db-${Date.now()}-${imageFile.name.replace(/\s+/g,'_')}`
         const { error: upErr } = await supabase.storage.from('pin-images').upload(path, imageFile)
         if (upErr) throw upErr
         const { data } = supabase.storage.from('pin-images').getPublicUrl(path)
@@ -2752,14 +2794,22 @@ function AdminPinDatabase() {
       updated_at: new Date().toISOString()
     }
     let error
-    if (editing) {
-      ({ error } = await supabase.from('pin_database').update(payload).eq('id', form.id))
+    if (isAdmin) {
+      if (editing) {
+        ({ error } = await supabase.from('pin_database').update(payload).eq('id', form.id))
+      } else {
+        ({ error } = await supabase.from('pin_database').insert([{ ...payload, status:'approved', submitted_by:userId }]))
+      }
+    } else if (editing) {
+      // Contributors never change live entries: the proposed values wait in the review queue
+      const { updated_at, ...proposed } = payload
+      ({ error } = await supabase.from('pin_database_edits').insert([{ pin_id: form.id, submitted_by: userId, proposed, status:'pending' }]))
     } else {
-      ({ error } = await supabase.from('pin_database').insert([payload]))
+      ({ error } = await supabase.from('pin_database').insert([{ ...payload, status:'pending', submitted_by:userId }]))
     }
     setSaving(false)
     if (error) { setError(error.message); return }
-    setMsg(editing ? 'Pin updated ✓' : 'Pin added to database ✓')
+    setMsg(isAdmin ? (editing ? 'Pin updated ✓' : 'Pin added to database ✓') : 'Thanks! Your submission was sent for review ✓')
     resetForm(); load()
   }
 
@@ -2792,9 +2842,10 @@ function AdminPinDatabase() {
 
   return (
     <div style={{ padding:'12px 4px' }}>
-      <div style={{ fontSize:18, fontWeight:'bold', color:'#f1f5f9', marginBottom:4 }}>📋 Pin Database (Admin)</div>
-      <div style={{ fontSize:12, color:'#64748b', marginBottom:16 }}>{rows.length} pins in the shared reference database</div>
+      <div style={{ fontSize:18, fontWeight:'bold', color:'#f1f5f9', marginBottom:4 }}>📋 Pin Database{isAdmin ? ' (Admin)' : ''}</div>
+      <div style={{ fontSize:12, color:'#64748b', marginBottom:16 }}>{rows.length} pins in the shared reference database{!isAdmin && '. Add a pin or suggest a fix. Submissions are reviewed before they go live.'}</div>
 
+      {isAdmin && (<>
       <div style={{ background:'rgba(124,58,237,0.06)', border:'1px solid rgba(124,58,237,0.25)', borderRadius:12, padding:14, marginBottom:16 }}>
         <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:8 }}>🔍 eBay Reference Lookup</div>
         <div style={{ fontSize:11, color:'#94a3b8', marginBottom:10 }}>Search eBay for a pin title or value — this is just a reference, it won't fill in the form for you.</div>
@@ -2888,10 +2939,11 @@ function AdminPinDatabase() {
           </>
         )}
       </div>
+      </>)}
 
       <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, padding:14, marginBottom:20 }}>
         <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:10 }}>
-          {editing ? '✏️ Edit Pin' : '➕ Add New Pin'}
+          {editing ? (isAdmin ? '✏️ Edit Pin' : '✏️ Suggest a Change') : (isAdmin ? '➕ Add New Pin' : '➕ Submit a New Pin')}
         </div>
 
         <label style={labelStyle}>Name *</label>
@@ -2976,14 +3028,492 @@ function AdminPinDatabase() {
                 {row.image_url ? <img src={row.image_url} alt={row.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <span style={{ fontSize:18 }}>📌</span>}
               </div>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:'bold', color:'#f1f5f9', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{row.name}</div>
+                <div style={{ fontSize:13, fontWeight:'bold', color:'#f1f5f9', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{row.name}{row.status === 'pending' && <span style={{ marginLeft:6, fontSize:9, color:'#fbbf24', border:'1px solid rgba(251,191,36,0.4)', borderRadius:4, padding:'1px 5px' }}>PENDING</span>}{row.status === 'rejected' && <span style={{ marginLeft:6, fontSize:9, color:'#f87171', border:'1px solid rgba(248,113,113,0.4)', borderRadius:4, padding:'1px 5px' }}>REJECTED</span>}</div>
                 <div style={{ fontSize:11, color:'#94a3b8' }}>
                   {[row.series, row.park, row.edition_size].filter(Boolean).join(' • ') || 'No details yet'}
                   {row.estimated_value != null && <span style={{ color:'#34d399' }}> • ${row.estimated_value}</span>}
                 </div>
               </div>
-              <button onClick={() => startEdit(row)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#c4b5fd', fontSize:11, cursor:'pointer' }}>Edit</button>
-              <button onClick={() => remove(row.id)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(248,113,113,0.3)', background:'transparent', color:'#f87171', fontSize:11, cursor:'pointer' }}>Delete</button>
+              <button onClick={() => startEdit(row)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#c4b5fd', fontSize:11, cursor:'pointer' }}>{isAdmin ? 'Edit' : 'Suggest edit'}</button>
+              {isAdmin && <button onClick={() => remove(row.id)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(248,113,113,0.3)', background:'transparent', color:'#f87171', fontSize:11, cursor:'pointer' }}>Delete</button>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Admin: review queue for community pin submissions ────────────────────────
+const REVIEW_FIELDS = [
+  ['name','Name'],['series','Series'],['park','Park'],['release_year','Year'],
+  ['edition_size','Edition'],['estimated_value','Value'],['description','Description'],
+  ['source_link','Source'],['image_url','Image']
+]
+
+// Copy an externally hosted image into our own storage so approved entries never break
+async function mirrorImage(url) {
+  if (!url || url.includes('/storage/v1/object/public/pin-images/')) return url
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return url
+    const blob = await res.blob()
+    const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg','jpg')
+    const path = `db/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`
+    const { error } = await supabase.storage.from('pin-images').upload(path, blob, { contentType: blob.type })
+    if (error) return url
+    return supabase.storage.from('pin-images').getPublicUrl(path).data.publicUrl
+  } catch { return url }
+}
+
+function AdminReviewQueue({ userId }) {
+  const [newPins, setNewPins] = useState([])
+  const [edits, setEdits] = useState([])
+  const [live, setLive] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(null)
+  const [msg, setMsg] = useState('')
+
+  async function load() {
+    setLoading(true)
+    const { data: np } = await supabase.from('pin_database').select('*').eq('status','pending').order('created_at', { ascending:true })
+    const { data: ed } = await supabase.from('pin_database_edits').select('*').eq('status','pending').order('created_at', { ascending:true })
+    setNewPins(np || []); setEdits(ed || [])
+    const ids = [...new Set((ed || []).map(e => e.pin_id))]
+    if (ids.length) {
+      const { data: rows } = await supabase.from('pin_database').select('*').in('id', ids)
+      setLive(Object.fromEntries((rows || []).map(r => [r.id, r])))
+    } else setLive({})
+    setLoading(false)
+  }
+  useEffect(() => { load() }, [])
+
+  const stamp = { reviewed_by: userId, reviewed_at: new Date().toISOString() }
+
+  async function approveNew(row) {
+    setBusy(row.id)
+    const image_url = await mirrorImage(row.image_url)
+    await supabase.from('pin_database').update({ status:'approved', image_url, ...stamp }).eq('id', row.id)
+    setNewPins(prev => prev.filter(r => r.id !== row.id)); setBusy(null); setMsg('Approved ✓')
+  }
+  async function rejectNew(row) {
+    setBusy(row.id)
+    await supabase.from('pin_database').update({ status:'rejected', ...stamp }).eq('id', row.id)
+    setNewPins(prev => prev.filter(r => r.id !== row.id)); setBusy(null); setMsg('Rejected')
+  }
+  async function approveEdit(e) {
+    setBusy(e.id)
+    const proposed = { ...e.proposed }
+    if (proposed.image_url) proposed.image_url = await mirrorImage(proposed.image_url)
+    await supabase.from('pin_database').update({ ...proposed, updated_at: new Date().toISOString() }).eq('id', e.pin_id)
+    await supabase.from('pin_database_edits').update({ status:'approved', ...stamp }).eq('id', e.id)
+    setEdits(prev => prev.filter(x => x.id !== e.id)); setBusy(null); setMsg('Edit approved and applied ✓')
+  }
+  async function rejectEdit(e) {
+    setBusy(e.id)
+    await supabase.from('pin_database_edits').update({ status:'rejected', ...stamp }).eq('id', e.id)
+    setEdits(prev => prev.filter(x => x.id !== e.id)); setBusy(null); setMsg('Edit rejected')
+  }
+
+  const btn = (bg, color, border) => ({ flex:1, padding:'9px', borderRadius:8, border:`1px solid ${border}`, background:bg, color, fontSize:12, fontWeight:'bold', cursor:'pointer' })
+  const card = { background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, padding:12, marginBottom:10 }
+  const fmt = v => (v === null || v === undefined || v === '') ? '—' : String(v)
+
+  return (
+    <div style={{ padding:'12px 4px' }}>
+      <div style={{ fontSize:18, fontWeight:'bold', color:'#f1f5f9', marginBottom:4 }}>✅ Review Queue</div>
+      <div style={{ fontSize:12, color:'#64748b', marginBottom:14 }}>{newPins.length} new pin{newPins.length===1?'':'s'} and {edits.length} edit{edits.length===1?'':'s'} waiting</div>
+      {msg && <div style={{ color:'#34d399', fontSize:12, marginBottom:10 }}>{msg}</div>}
+      {loading ? <div style={{ textAlign:'center', color:'#64748b', padding:20 }}>Loading...</div> : (
+        <>
+          {newPins.length === 0 && edits.length === 0 && <div style={{ textAlign:'center', color:'#64748b', padding:20 }}>Nothing to review 🎉</div>}
+
+          {newPins.map(row => (
+            <div key={row.id} style={card}>
+              <div style={{ fontSize:11, color:'#fbbf24', fontWeight:'bold', marginBottom:8 }}>NEW PIN</div>
+              <div style={{ display:'flex', gap:10, marginBottom:10 }}>
+                {row.image_url && <img src={row.image_url} alt="" style={{ width:70, height:70, borderRadius:8, objectFit:'cover' }} />}
+                <div style={{ flex:1, minWidth:0, fontSize:12, color:'#cbd5e1', lineHeight:1.6 }}>
+                  {REVIEW_FIELDS.filter(([k]) => k !== 'image_url' && row[k] !== null && row[k] !== '').map(([k,label]) => (
+                    <div key={k}><span style={{ color:'#64748b' }}>{label}: </span>{String(row[k])}</div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:8 }}>
+                <button disabled={busy===row.id} onClick={() => approveNew(row)} style={btn('rgba(16,185,129,0.15)','#34d399','rgba(16,185,129,0.4)')}>{busy===row.id ? '...' : 'Approve'}</button>
+                <button disabled={busy===row.id} onClick={() => rejectNew(row)} style={btn('rgba(220,38,38,0.08)','#f87171','rgba(248,113,113,0.3)')}>Reject</button>
+              </div>
+            </div>
+          ))}
+
+          {edits.map(e => {
+            const cur = live[e.pin_id] || {}
+            const changed = REVIEW_FIELDS.filter(([k]) => fmt(cur[k]) !== fmt(e.proposed?.[k]))
+            return (
+              <div key={e.id} style={card}>
+                <div style={{ fontSize:11, color:'#60a5fa', fontWeight:'bold', marginBottom:4 }}>SUGGESTED EDIT</div>
+                <div style={{ fontSize:13, fontWeight:'bold', color:'#f1f5f9', marginBottom:8 }}>{cur.name || 'Pin'}</div>
+                {changed.length === 0 && <div style={{ fontSize:12, color:'#64748b', marginBottom:8 }}>No differences from the live entry.</div>}
+                {changed.map(([k,label]) => (
+                  <div key={k} style={{ fontSize:12, marginBottom:6, wordBreak:'break-word' }}>
+                    <div style={{ color:'#64748b' }}>{label}</div>
+                    {k === 'image_url' ? (
+                      <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                        {cur[k] ? <img src={cur[k]} alt="" style={{ width:50, height:50, borderRadius:6, objectFit:'cover' }} /> : <span style={{ color:'#f87171' }}>none</span>}
+                        <span style={{ color:'#64748b' }}>→</span>
+                        {e.proposed?.[k] ? <img src={e.proposed[k]} alt="" style={{ width:50, height:50, borderRadius:6, objectFit:'cover' }} /> : <span style={{ color:'#34d399' }}>none</span>}
+                      </div>
+                    ) : (
+                      <div><span style={{ color:'#f87171', textDecoration:'line-through' }}>{fmt(cur[k])}</span> <span style={{ color:'#64748b' }}>→</span> <span style={{ color:'#34d399' }}>{fmt(e.proposed?.[k])}</span></div>
+                    )}
+                  </div>
+                ))}
+                <div style={{ display:'flex', gap:8, marginTop:8 }}>
+                  <button disabled={busy===e.id} onClick={() => approveEdit(e)} style={btn('rgba(16,185,129,0.15)','#34d399','rgba(16,185,129,0.4)')}>{busy===e.id ? '...' : 'Approve'}</button>
+                  <button disabled={busy===e.id} onClick={() => rejectEdit(e)} style={btn('rgba(220,38,38,0.08)','#f87171','rgba(248,113,113,0.3)')}>Reject</button>
+                </div>
+              </div>
+            )
+          })}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Facebook trade post generator ─────────────────────────────────────────────
+const TP_PER_IMAGE = 12
+const TP_DEFAULT_TEXT = "Hi pin traders! 👋\n\nI'm in search of the pins in the ISO section and have the pins in the Traders section available to trade. Message me or comment if you have a match!\n\n#DisneyPins #PinTrading"
+
+function tpLoadImage(src) {
+  return new Promise(resolve => {
+    if (!src) return resolve(null)
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => resolve(img)
+    img.onerror = () => resolve(null)
+    img.src = src
+  })
+}
+
+function tpWrap(ctx, text, maxWidth, maxLines) {
+  const words = (text || '').split(/\s+/); const lines = []; let line = ''
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w
+    if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = w } else line = test
+  }
+  if (line) lines.push(line)
+  if (lines.length > maxLines) { lines.length = maxLines; lines[maxLines-1] = lines[maxLines-1].replace(/.{0,3}$/, '…') }
+  return lines
+}
+
+// Draws one post image: ISO section on top, Traders section below
+async function tpDrawPage(canvas, isoItems, traderItems, imgCache) {
+  const W = 1080, COLS = 4, PAD = 30, GAP = 20
+  const tile = (W - PAD*2 - GAP*(COLS-1)) / COLS
+  const capH = 56, headH = 76
+  const rows = n => Math.max(1, Math.ceil(n / COLS))
+  const sections = [
+    { label:'ISO', sub:'In Search Of', color:'#db2777', items:isoItems },
+    { label:'TRADERS', sub:'Available to Trade', color:'#059669', items:traderItems }
+  ].filter(sec => sec.items.length > 0)
+  let H = PAD
+  sections.forEach(sec => { H += headH + rows(sec.items.length) * (tile + capH + GAP) + 10 })
+  H += 40
+  canvas.width = W; canvas.height = H
+  const ctx = canvas.getContext('2d')
+  const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#1a1040'); bg.addColorStop(1, '#0f172a')
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H)
+
+  let y = PAD
+  for (const sec of sections) {
+    ctx.fillStyle = sec.color
+    ctx.beginPath(); ctx.roundRect(PAD, y, W - PAD*2, headH - 12, 14); ctx.fill()
+    ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'
+    ctx.font = 'bold 40px Arial, sans-serif'; ctx.textAlign = 'left'
+    ctx.fillText(sec.label, PAD + 22, y + (headH-12)/2)
+    ctx.font = '26px Arial, sans-serif'; ctx.textAlign = 'right'
+    ctx.fillText(sec.sub, W - PAD - 22, y + (headH-12)/2)
+    y += headH
+    for (let i = 0; i < sec.items.length; i++) {
+      const it = sec.items[i]
+      const col = i % COLS, row = Math.floor(i / COLS)
+      const x = PAD + col * (tile + GAP), ty = y + row * (tile + capH + GAP)
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.roundRect(x, ty, tile, tile + capH, 12); ctx.fill()
+      let img = imgCache.get(it.img)
+      if (img === undefined) { img = await tpLoadImage(it.img); imgCache.set(it.img, img) }
+      ctx.save(); ctx.beginPath(); ctx.roundRect(x + 6, ty + 6, tile - 12, tile - 12, 8); ctx.clip()
+      if (img) {
+        const r = Math.min((tile-12)/img.width, (tile-12)/img.height)
+        const w = img.width * r, h = img.height * r
+        ctx.fillStyle = '#f1f5f9'; ctx.fillRect(x + 6, ty + 6, tile - 12, tile - 12)
+        ctx.drawImage(img, x + 6 + (tile-12-w)/2, ty + 6 + (tile-12-h)/2, w, h)
+      } else {
+        ctx.fillStyle = '#e2e8f0'; ctx.fillRect(x + 6, ty + 6, tile - 12, tile - 12)
+        ctx.fillStyle = '#94a3b8'; ctx.font = '64px Arial'; ctx.textAlign = 'center'; ctx.fillText('📌', x + tile/2, ty + tile/2)
+      }
+      ctx.restore()
+      ctx.fillStyle = '#1e293b'; ctx.font = 'bold 17px Arial, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
+      const lines = tpWrap(ctx, it.name || '', tile - 16, 2)
+      lines.forEach((l, li) => ctx.fillText(l, x + tile/2, ty + tile + 22 + li*21))
+      ctx.textBaseline = 'middle'
+    }
+    y += rows(sec.items.length) * (tile + capH + GAP) + 10
+  }
+  ctx.fillStyle = '#64748b'; ctx.font = '18px Arial, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
+  ctx.fillText('Made with CastlePins', W/2, H - 14)
+}
+
+function TradePostGenerator({ pins, books, userId }) {
+  const [iso, setIso] = useState([])
+  const [traders, setTraders] = useState([])
+  const [picking, setPicking] = useState(null) // 'iso' | 'traders' | null
+  const [src, setSrc] = useState('have')
+  const [bookId, setBookId] = useState('')
+  const [dbQuery, setDbQuery] = useState('')
+  const [dbRows, setDbRows] = useState([])
+  const [text, setText] = useState(TP_DEFAULT_TEXT)
+  const [copied, setCopied] = useState(false)
+  const [rendering, setRendering] = useState(false)
+  const canvasRefs = useRef([])
+  const imgCache = useRef(new Map())
+  const uploadRef = useRef()
+
+  const pageCount = Math.max(1, Math.ceil(iso.length / TP_PER_IMAGE), Math.ceil(traders.length / TP_PER_IMAGE))
+  const pages = Array.from({ length: pageCount }, (_, i) => ({
+    iso: iso.slice(i*TP_PER_IMAGE, (i+1)*TP_PER_IMAGE),
+    traders: traders.slice(i*TP_PER_IMAGE, (i+1)*TP_PER_IMAGE)
+  }))
+
+  useEffect(() => {
+    let cancelled = false
+    async function draw() {
+      if (iso.length + traders.length === 0) return
+      setRendering(true)
+      for (let i = 0; i < pages.length; i++) {
+        const c = canvasRefs.current[i]
+        if (c && !cancelled) await tpDrawPage(c, pages[i].iso, pages[i].traders, imgCache.current)
+      }
+      if (!cancelled) setRendering(false)
+    }
+    draw()
+    return () => { cancelled = true }
+  }, [iso, traders])
+
+  useEffect(() => {
+    if (src !== 'db') return
+    const t = setTimeout(async () => {
+      let q = supabase.from('pin_database').select('id, name, image_url').eq('status', 'approved').order('name').limit(40)
+      if (dbQuery.trim()) q = q.ilike('name', `%${dbQuery.trim()}%`)
+      const { data } = await q
+      setDbRows(data || [])
+    }, 250)
+    return () => clearTimeout(t)
+  }, [src, dbQuery])
+
+  const target = picking === 'iso' ? iso : traders
+  const setTarget = picking === 'iso' ? setIso : setTraders
+  const isPicked = key => target.some(x => x.key === key)
+  function toggle(item) {
+    setTarget(prev => prev.some(x => x.key === item.key) ? prev.filter(x => x.key !== item.key) : [...prev, item])
+  }
+
+  async function onUpload(e) {
+    const files = Array.from(e.target.files || [])
+    const added = []
+    for (const f of files) {
+      const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(f) })
+      const img = await tpLoadImage(dataUrl)
+      let out = dataUrl
+      if (img) {
+        const scale = Math.min(1, 700 / Math.max(img.width, img.height))
+        const c = document.createElement('canvas'); c.width = img.width*scale; c.height = img.height*scale
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+        out = c.toDataURL('image/jpeg', 0.85)
+      }
+      added.push({ key:`up-${Date.now()}-${Math.random()}`, name: f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '), img: out })
+    }
+    setTarget(prev => [...prev, ...added])
+    e.target.value = ''
+  }
+
+  function renameItem(setter, key, name) { setter(prev => prev.map(x => x.key === key ? { ...x, name } : x)) }
+
+  function download(i) {
+    const c = canvasRefs.current[i]; if (!c) return
+    c.toBlob(blob => {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob)
+      a.download = pageCount > 1 ? `castlepins-trade-post-${i+1}.png` : 'castlepins-trade-post.png'
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+    }, 'image/png')
+  }
+  async function downloadAll() { for (let i = 0; i < pageCount; i++) { download(i); await new Promise(r => setTimeout(r, 400)) } }
+  async function copyText() {
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800) } catch { window.prompt('Copy your post text:', text) }
+  }
+
+  const pinItem = p => ({ key:`pin-${p.id}`, name:p.name, img:p.image_url })
+  let pickList = []
+  if (src === 'have') pickList = pins.filter(p => p.list === 'have').map(pinItem)
+  else if (src === 'want') pickList = pins.filter(p => p.list === 'want').map(pinItem)
+  else if (src === 'book') pickList = bookId ? pins.filter(p => (p.book_ids||[]).includes(bookId)).map(pinItem) : []
+  else if (src === 'db') pickList = dbRows.map(r => ({ key:`db-${r.id}`, name:r.name, img:r.image_url }))
+
+  const card = { background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:14, padding:14, marginBottom:14 }
+  const chip = active => ({ padding:'6px 12px', borderRadius:16, border:`1px solid ${active?'rgba(124,58,237,0.6)':'rgba(255,255,255,0.15)'}`, background:active?'rgba(124,58,237,0.3)':'transparent', color:active?'#e2d9f3':'#94a3b8', fontSize:12, cursor:'pointer', fontWeight:'bold' })
+  const primary = { padding:'10px 14px', borderRadius:10, border:'none', background:'linear-gradient(135deg,#7c3aed,#db2777)', color:'#fff', fontSize:13, fontWeight:'bold', cursor:'pointer' }
+
+  function Section({ id, title, color, items, setter }) {
+    return (
+      <div style={{ ...card, borderColor: color + '66' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+          <div style={{ fontSize:14, fontWeight:'bold', color }}>{title} <span style={{ color:'#64748b', fontWeight:'normal' }}>({items.length})</span></div>
+          <button onClick={() => setPicking(picking === id ? null : id)} style={chip(picking === id)}>{picking === id ? 'Done' : '+ Add pins'}</button>
+        </div>
+        {items.length === 0 && <div style={{ fontSize:12, color:'#64748b' }}>No pins yet. Tap "Add pins" to choose from your collection, wish list, books, the pin database, or upload photos.</div>}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(88px,1fr))', gap:8 }}>
+          {items.map(it => (
+            <div key={it.key} style={{ position:'relative', background:'rgba(255,255,255,0.05)', borderRadius:10, padding:4 }}>
+              <button onClick={() => setter(prev => prev.filter(x => x.key !== it.key))} aria-label="Remove"
+                style={{ position:'absolute', top:2, right:2, width:20, height:20, borderRadius:10, border:'none', background:'rgba(0,0,0,0.7)', color:'#fff', fontSize:12, cursor:'pointer', lineHeight:'20px', padding:0 }}>×</button>
+              <div style={{ height:80, borderRadius:8, overflow:'hidden', background:'#e2e8f0', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {it.img ? <img src={it.img} alt="" style={{ width:'100%', height:'100%', objectFit:'contain' }} /> : <span style={{ fontSize:26 }}>📌</span>}
+              </div>
+              <input value={it.name} onChange={e => renameItem(setter, it.key, e.target.value)}
+                style={{ width:'100%', marginTop:4, padding:'3px 4px', fontSize:10, borderRadius:5, border:'1px solid rgba(255,255,255,0.12)', background:'rgba(0,0,0,0.25)', color:'#e2e8f0' }} />
+            </div>
+          ))}
+        </div>
+        {picking === id && (
+          <div style={{ marginTop:12, borderTop:'1px solid rgba(255,255,255,0.1)', paddingTop:12 }}>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
+              {[['have','🎒 Collection'],['want','⭐ Wish List'],['book','📚 Books'],['db','📋 Database'],['upload','📷 Upload']].map(([k,l]) => (
+                <button key={k} onClick={() => setSrc(k)} style={chip(src===k)}>{l}</button>
+              ))}
+            </div>
+            {src === 'book' && (
+              <select value={bookId} onChange={e => setBookId(e.target.value)} style={{ width:'100%', padding:8, borderRadius:8, marginBottom:10, background:'#1a1040', color:'#f1f5f9', border:'1px solid rgba(255,255,255,0.15)' }}>
+                <option value="">Choose a book...</option>
+                {books.map(b => <option key={b.id} value={b.id}>{b.emoji ? b.emoji + ' ' : ''}{b.name}</option>)}
+              </select>
+            )}
+            {src === 'db' && <input className="search-bar" placeholder="🔍 Search the pin database..." value={dbQuery} onChange={e => setDbQuery(e.target.value)} />}
+            {src === 'upload' ? (
+              <div>
+                <input ref={uploadRef} type="file" accept="image/*" multiple style={{ display:'none' }} onChange={onUpload} />
+                <button onClick={() => uploadRef.current?.click()} style={primary}>Choose photos</button>
+                <div style={{ fontSize:11, color:'#64748b', marginTop:6 }}>Each photo becomes one pin tile. Rename it under the tile.</div>
+              </div>
+            ) : (
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(76px,1fr))', gap:8, maxHeight:280, overflowY:'auto' }}>
+                {pickList.length === 0 && <div style={{ fontSize:12, color:'#64748b', gridColumn:'1/-1' }}>{src==='book' && !bookId ? 'Pick a book above.' : 'Nothing here yet.'}</div>}
+                {pickList.map(it => (
+                  <button key={it.key} onClick={() => toggle(it)} title={it.name}
+                    style={{ position:'relative', padding:3, borderRadius:8, cursor:'pointer', background:'rgba(255,255,255,0.05)', border:`2px solid ${isPicked(it.key)?'#a78bfa':'transparent'}` }}>
+                    <div style={{ height:64, borderRadius:6, overflow:'hidden', background:'#e2e8f0', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      {it.img ? <img src={it.img} alt="" style={{ width:'100%', height:'100%', objectFit:'contain' }} /> : <span style={{ fontSize:22 }}>📌</span>}
+                    </div>
+                    <div style={{ fontSize:9, color:'#cbd5e1', marginTop:3, height:22, overflow:'hidden' }}>{it.name}</div>
+                    {isPicked(it.key) && <span style={{ position:'absolute', top:4, right:4, background:'#7c3aed', color:'#fff', borderRadius:8, fontSize:10, padding:'0 5px' }}>✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ padding:'12px 4px', maxWidth:760, margin:'0 auto' }}>
+      <div style={{ fontSize:18, fontWeight:'bold', color:'#f1f5f9', marginBottom:4 }}>📣 Trade Post Maker</div>
+      <div style={{ fontSize:12, color:'#64748b', marginBottom:14 }}>Build a picture for Facebook trading groups: pins you want (ISO) and pins you have to trade.</div>
+
+      {Section({ id:'iso', title:'ISO: In Search Of', color:'#f472b6', items:iso, setter:setIso })}
+      {Section({ id:'traders', title:'Traders: Available to Trade', color:'#34d399', items:traders, setter:setTraders })}
+
+      <div style={card}>
+        <div style={{ fontSize:14, fontWeight:'bold', color:'#c4b5fd', marginBottom:8 }}>Post text</div>
+        <textarea value={text} onChange={e => setText(e.target.value)} rows={6}
+          style={{ width:'100%', padding:10, borderRadius:10, border:'1px solid rgba(255,255,255,0.15)', background:'rgba(255,255,255,0.04)', color:'#f1f5f9', fontSize:13, lineHeight:1.5, resize:'vertical' }} />
+        <div style={{ display:'flex', gap:8, marginTop:8 }}>
+          <button onClick={copyText} style={primary}>{copied ? '✓ Copied' : 'Copy text'}</button>
+          <button onClick={() => setText(TP_DEFAULT_TEXT)} style={chip(false)}>Reset text</button>
+        </div>
+      </div>
+
+      <div style={card}>
+        <div style={{ fontSize:14, fontWeight:'bold', color:'#c4b5fd', marginBottom:8 }}>Preview {rendering && <span style={{ color:'#64748b', fontWeight:'normal' }}>(drawing...)</span>}</div>
+        {iso.length + traders.length === 0 ? (
+          <div style={{ fontSize:12, color:'#64748b' }}>Add pins above to see your post.</div>
+        ) : (
+          <>
+            {pageCount > 1 && <div style={{ fontSize:11, color:'#94a3b8', marginBottom:8 }}>That's a lot of pins. Facebook posts look best with {TP_PER_IMAGE} or fewer per section, so this is split into {pageCount} images.</div>}
+            {pages.map((_, i) => (
+              <div key={i} style={{ marginBottom:14 }}>
+                <canvas ref={el => { canvasRefs.current[i] = el }} style={{ width:'100%', height:'auto', borderRadius:10, display:'block' }} />
+                <button onClick={() => download(i)} style={{ ...primary, marginTop:8, width:'100%' }}>⬇️ Download PNG{pageCount > 1 ? ` (${i+1} of ${pageCount})` : ''}</button>
+              </div>
+            ))}
+            {pageCount > 1 && <button onClick={downloadAll} style={chip(true)}>Download all {pageCount}</button>}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Admin: manage users ───────────────────────────────────────────────────────
+function AdminUsers({ currentUserId }) {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(null)
+
+  async function load() {
+    setLoading(true); setError('')
+    try {
+      const res = await fetch('/api/admin-list-users', { method:'POST', headers: await authHeaders() })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not load users')
+      setUsers(data.users || [])
+    } catch (e) { setError(e.message) }
+    setLoading(false)
+  }
+  useEffect(() => { load() }, [])
+
+  async function remove(u) {
+    if (!window.confirm(`Delete ${u.email}?\n\nThis permanently erases their account, pins, books, mystery boxes and photos.`)) return
+    setBusy(u.id)
+    try {
+      const res = await fetch('/api/admin-delete-user', { method:'POST', headers: await authHeaders(), body: JSON.stringify({ userId: u.id }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Delete failed')
+      setUsers(prev => prev.filter(x => x.id !== u.id))
+    } catch (e) { setError(e.message) }
+    setBusy(null)
+  }
+
+  const filtered = users.filter(u => !search.trim() || `${u.email} ${u.display_name||''}`.toLowerCase().includes(search.toLowerCase()))
+  return (
+    <div style={{ padding:'12px 4px' }}>
+      <div style={{ fontSize:18, fontWeight:'bold', color:'#f1f5f9', marginBottom:4 }}>👥 Users (Admin)</div>
+      <div style={{ fontSize:12, color:'#64748b', marginBottom:12 }}>{users.length} accounts</div>
+      <input className="search-bar" placeholder="🔍 Search by email or name..." value={search} onChange={e => setSearch(e.target.value)} />
+      {error && <div style={{ color:'#f87171', fontSize:12, margin:'8px 0' }}>{error}</div>}
+      {loading ? <div style={{ textAlign:'center', color:'#64748b', padding:20 }}>Loading...</div> : (
+        <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:10 }}>
+          {filtered.map(u => (
+            <div key={u.id} style={{ display:'flex', gap:10, alignItems:'center', background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:10, padding:10 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, color:'#f1f5f9', fontWeight:'bold', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.email}{u.is_admin && ' 👑'}</div>
+                <div style={{ fontSize:11, color:'#64748b' }}>{[u.display_name, u.created_at && new Date(u.created_at).toLocaleDateString()].filter(Boolean).join(' • ')}</div>
+              </div>
+              {u.id !== currentUserId && !u.is_admin && (
+                <button disabled={busy===u.id} onClick={() => remove(u)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(248,113,113,0.3)', background:'transparent', color:'#f87171', fontSize:11, cursor:'pointer' }}>{busy===u.id ? '...' : 'Delete'}</button>
+              )}
             </div>
           ))}
         </div>
@@ -2995,7 +3525,7 @@ function AdminPinDatabase() {
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState(null)
-  const ADMIN_EMAIL = 'waltnv702@gmail.com'
+  const [moreOpen, setMoreOpen] = useState(false)
   const [pins, setPins] = useState([])
   const [books, setBooks] = useState([])
   const [mysteryBoxes, setMysteryBoxes] = useState([])
@@ -3050,15 +3580,28 @@ export default function App() {
     setPinsLoading(false)
   }
 
-  async function addMultiplePins(pinsData, list) {
+  async function addMultiplePins(pinsData, list, scanImageData) {
+    // Upload the scan photo once and reuse its URL for every pin from this scan
+    let sharedImageUrl = null
+    if (scanImageData) {
+      try {
+        const blob = await (await fetch(scanImageData)).blob()
+        const path = `${user.id}/scan-${Date.now()}.jpg`
+        const { error: upErr } = await supabase.storage.from('pin-images').upload(path, blob)
+        if (!upErr) {
+          const { data } = supabase.storage.from('pin-images').getPublicUrl(path)
+          sharedImageUrl = data.publicUrl
+        } else console.error('Scan photo upload error:', upErr)
+      } catch (e) { console.error('Scan photo upload error:', e) }
+    }
     for (const pin of pinsData) {
       await supabase.from('pins').insert([{
-        name: pin.name.trim(),
+        name: (pin.name || 'Unnamed pin').trim(),
         series: (pin.series || '').trim(),
         description: (pin.description || '').trim(),
         list,
         user_id: user.id,
-        image_url: null
+        image_url: sharedImageUrl
       }])
     }
     await fetchAll(user.id)
@@ -3124,12 +3667,13 @@ export default function App() {
   }
 
   const hasAccess = subscription?.status === 'active' || subscription?.is_admin === true
+  const isAdminUser = subscription?.is_admin === true
 
   async function handleUpgrade(plan) {
     try {
       const res = await fetch('/api/create-checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({ plan, userId: user.id, email: user.email })
       })
       const { url } = await res.json()
@@ -3205,9 +3749,11 @@ export default function App() {
     { id:'books',   icon:'📚', label:'Books',      count:books.length > 0 ? books.length : null },
     { id:'mystery', icon:'🎁', label:'Mystery Boxes', count:mysteryBoxes.length > 0 ? mysteryBoxes.length : null },
     { id:'add',     icon:'＋', label:'Add Pin' },
-    { id:'trade',   icon:'🤝', label:'Trade' },
+    ...(TRADING_ENABLED ? [{ id:'trade', icon:'🤝', label:'Trade' }] : []),
     { id:'profile', icon:'👤', label:'Profile' },
-    ...(user.email === ADMIN_EMAIL ? [{ id:'admin', icon:'📋', label:'Pin DB' }, { id:'checklist-admin', icon:'🗂️', label:'Checklist Admin' }] : [])
+    { id:'tradepost', icon:'📣', label:'Trade Post' },
+    { id:'pindb', icon:'📋', label:'Pin Database' },
+    ...(isAdminUser ? [{ id:'pin-review', icon:'✅', label:'Review Queue' }, { id:'users', icon:'👥', label:'Users' }, { id:'checklist-admin', icon:'🗂️', label:'Checklist Admin' }] : [])
   ]
 
   return (
@@ -3250,8 +3796,8 @@ export default function App() {
 
       {/* Main */}
       <div className="main-content">
-        {tab==='have'    && <PinList pins={pins} listType="have" onDelete={deletePin} onMove={movePin} onToggleTrader={toggleTrader} loading={pinsLoading} userId={user.id} />}
-        {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} onToggleTrader={toggleTrader} loading={pinsLoading} userId={user.id} />}
+        {tab==='have'    && <PinList pins={pins} listType="have" onDelete={deletePin} onMove={movePin} onToggleTrader={TRADING_ENABLED ? toggleTrader : undefined} loading={pinsLoading} userId={user.id} />}
+        {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} onToggleTrader={TRADING_ENABLED ? toggleTrader : undefined} loading={pinsLoading} userId={user.id} />}
         {tab==='books'   && (
           <div>
             <div style={{ display:'flex', gap:8, marginBottom:14 }}>
@@ -3274,24 +3820,54 @@ export default function App() {
         )}
         {tab==='mystery' && <MysteryBoxesPage boxes={mysteryBoxes} userId={user.id} onAdd={addMysteryBox} onUpdate={updateMysteryBox} onDelete={deleteMysteryBox} loading={pinsLoading} />}
         {tab==='add'     && (multiScan && hasAccess ? <MultiPinScanner onAddMultiple={addMultiplePins} userId={user.id} onClose={() => setMultiScan(false)} /> : <AddPinForm onAdd={addPin} userId={user.id} hasAccess={hasAccess} onUpgrade={handleUpgrade} onMultiScan={() => setMultiScan(true)} />)}
-        {tab==='admin'   && user.email === ADMIN_EMAIL && <AdminPinDatabase />}
-        {tab==='checklist-admin' && user.email === ADMIN_EMAIL && <AdminChecklistBuilder />}
-        {tab==='trade'   && <TradingPage user={user} pins={pins} hasAccess={hasAccess} profile={profile} onUpdateProfile={updateProfile} onUpgrade={handleUpgrade} onLegal={setLegalPage} />}
+        {tab==='tradepost' && <TradePostGenerator pins={pins} books={books} userId={user.id} />}
+        {tab==='pindb'   && <AdminPinDatabase isAdmin={isAdminUser} userId={user.id} />}
+        {tab==='pin-review' && isAdminUser && <AdminReviewQueue userId={user.id} />}
+        {tab==='users' && isAdminUser && <AdminUsers currentUserId={user.id} />}
+        {tab==='checklist-admin' && isAdminUser && <AdminChecklistBuilder />}
+        {tab==='trade'   && TRADING_ENABLED && <TradingPage user={user} pins={pins} hasAccess={hasAccess} profile={profile} onUpdateProfile={updateProfile} onUpgrade={handleUpgrade} onLegal={setLegalPage} />}
         {tab==='profile' && <ProfilePage user={user} haveCount={haveCount} wantCount={wantCount} subscription={subscription} onUpgrade={handleUpgrade} profile={profile} onUpdateProfile={updateProfile} onLegal={setLegalPage} />}
       </div>
 
-      {/* Mobile bottom nav */}
-      <div className="bottom-nav">
-        {navItems.map(t => (
-          <button key={t.id} className={`nav-tab-btn ${tab===t.id?'active':''}`} onClick={() => setTab(t.id)}>
-            <span className="nav-icon">{t.icon}</span>
-            <span>{t.label}</span>
-            {t.count != null && t.count > 0 && (
-              <span style={{ position:'absolute', top:7, left:'50%', marginLeft:6, fontSize:9, background:'#7c3aed', color:'white', borderRadius:8, padding:'1px 5px', lineHeight:'14px' }}>{t.count}</span>
+      {/* Mobile bottom nav: five main tabs + More */}
+      {(() => {
+        const mainIds = ['have','want','books','add']
+        const mainItems = navItems.filter(t => mainIds.includes(t.id))
+        const moreItems = navItems.filter(t => !mainIds.includes(t.id))
+        const moreActive = moreItems.some(t => t.id === tab)
+        return (
+          <>
+            {moreOpen && (
+              <>
+                <div className="more-backdrop" onClick={() => setMoreOpen(false)} />
+                <div className="more-sheet">
+                  {moreItems.map(t => (
+                    <button key={t.id} className={`more-item ${tab===t.id?'active':''}`} onClick={() => { setTab(t.id); setMoreOpen(false) }}>
+                      <span style={{ fontSize:24 }}>{t.icon}</span>
+                      <span>{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
-          </button>
-        ))}
-      </div>
+            <div className="bottom-nav" style={{ zIndex:160 }}>
+              {mainItems.map(t => (
+                <button key={t.id} className={`nav-tab-btn ${tab===t.id?'active':''}`} onClick={() => { setTab(t.id); setMoreOpen(false) }}>
+                  <span className="nav-icon">{t.icon}</span>
+                  <span>{t.label}</span>
+                  {t.count != null && t.count > 0 && (
+                    <span style={{ position:'absolute', top:7, left:'50%', marginLeft:6, fontSize:9, background:'#7c3aed', color:'white', borderRadius:8, padding:'1px 5px', lineHeight:'14px' }}>{t.count}</span>
+                  )}
+                </button>
+              ))}
+              <button className={`nav-tab-btn ${moreActive||moreOpen?'active':''}`} onClick={() => setMoreOpen(o => !o)}>
+                <span className="nav-icon">☰</span>
+                <span>More</span>
+              </button>
+            </div>
+          </>
+        )
+      })()}
     </div>
   )
 }
