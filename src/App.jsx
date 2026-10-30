@@ -3183,7 +3183,7 @@ function AdminReviewQueue({ userId }) {
 
 // ── Facebook trade post generator ─────────────────────────────────────────────
 const TP_PER_IMAGE = 12
-const TP_DEFAULT_TEXT = "Hi pin traders! 👋\n\nI'm in search of the pins in the ISO section and have the pins in the Traders section available to trade. Message me or comment if you have a match!\n\n#DisneyPins #PinTrading"
+const TP_DEFAULT_TEXT = "FTO (For Trade Only) / NFS (Not For Sale)\n\nHi pin traders! 👋\n\nI'm in search of the pins in the ISO section and have the pins in the Traders section available to trade. Message me or comment if you have a match!\n\n#DisneyPins #PinTrading"
 
 function tpLoadImage(src) {
   return new Promise(resolve => {
