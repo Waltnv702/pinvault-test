@@ -1,3 +1,4 @@
+import { requireUser } from './_auth.js'
 async function getEbayToken(clientId, clientSecret) {
   const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
   const resp = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
@@ -19,10 +20,13 @@ async function getEbayToken(clientId, clientSecret) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: `Method ${req.method} not allowed` })
+
+  const auth = await requireUser(req, res, { limit: 3 })
+  if (!auth) return
 
   try {
     const { query } = req.body
