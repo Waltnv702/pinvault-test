@@ -1,3 +1,4 @@
+import { requireUser } from './_auth.js'
 // Extract dollar amounts from eBay listing prices and compute a value estimate
 function estimateValueFromListings(items) {
   const prices = items
@@ -37,10 +38,13 @@ async function getEbayToken(clientId, clientSecret) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ found: false, reason: `Method ${req.method} not allowed` })
+
+  const auth = await requireUser(req, res, { limit: 20 })
+  if (!auth) return
 
   try {
     const { image } = req.body
