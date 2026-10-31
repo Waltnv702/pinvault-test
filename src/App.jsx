@@ -278,7 +278,7 @@ function LegalPage({ page, onBack }) {
           ) : (
             <>
               <Section title="1. Information We Collect">
-                We collect your email address, password (stored securely as a hash), optional display name, and pin collection data including photos you upload. Payment details are handled by Stripe and never stored by CastlePins.
+                We collect your name, email address, password (stored securely as a hash), a record of when you accepted these terms, and pin collection data including photos you upload. Payment details are handled by Stripe and never stored by CastlePins.
               </Section>
               <Section title="2. How We Use Your Information">
                 We use your information to provide and improve the App, process payments, send transactional emails (such as password resets), {TRADING_ENABLED ? 'facilitate pin trading, ' : ''}and respond to support requests.
@@ -328,6 +328,9 @@ function Section({ title, children }) {
 function AuthScreen({ onLogin, onLegal }) {
   const [email, setEmail] = useState('')
   const [pw, setPw] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [agree, setAgree] = useState(false)
   const [mode, setMode] = useState('login')
   const [error, setError] = useState('')
   const [msg, setMsg] = useState('')
@@ -348,10 +351,18 @@ function AuthScreen({ onLogin, onLegal }) {
       return
     }
     if (pw.length < 6) { setError('Password must be at least 6 characters.'); return }
+    if (mode === 'register') {
+      if (!firstName.trim() || !lastName.trim()) { setError('Please enter your first and last name.'); return }
+      if (!agree) { setError('Please agree to the Terms of Service and Privacy Policy to continue.'); return }
+    }
     setLoading(true); setError('')
     try {
       if (mode === 'register') {
-        const { data, error } = await supabase.auth.signUp({ email, password: pw })
+        const fn = firstName.trim(), ln = lastName.trim()
+        const { data, error } = await supabase.auth.signUp({
+          email, password: pw,
+          options: { data: { first_name: fn, last_name: ln, display_name: `${fn} ${ln[0].toUpperCase()}.`, terms_accepted_at: new Date().toISOString() } }
+        })
         if (error) throw error
         // Supabase returns no error for an existing email; the user object comes back with no identities
         if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
@@ -395,6 +406,12 @@ function AuthScreen({ onLogin, onLegal }) {
           </div>
         )}
 
+        {mode === 'register' && (
+          <div style={{ display:'flex', gap:8 }}>
+            <input className="field-input" placeholder="First name" autoComplete="given-name" value={firstName} onChange={e => { setFirstName(e.target.value); setError('') }} />
+            <input className="field-input" placeholder="Last name" autoComplete="family-name" value={lastName} onChange={e => { setLastName(e.target.value); setError('') }} />
+          </div>
+        )}
         <input className="field-input" type="email" placeholder="Email address" value={email} onChange={e => { setEmail(e.target.value); setError('') }} />
 
         {mode !== 'forgot' && (
@@ -416,6 +433,15 @@ function AuthScreen({ onLogin, onLegal }) {
           </button>
         )}
         {mode === 'register' && (
+          <label style={{ display:'flex', gap:8, alignItems:'flex-start', fontSize:11, color:'#94a3b8', marginTop:14, lineHeight:1.6, textAlign:'left', cursor:'pointer' }}>
+            <input type="checkbox" checked={agree} onChange={e => { setAgree(e.target.checked); setError('') }} style={{ marginTop:3, flexShrink:0 }} />
+            <span>I am at least 13 years old and agree to the{' '}
+            <button type="button" onClick={e => { e.preventDefault(); onLegal('terms') }} style={{ background:'none', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:11, padding:0, textDecoration:'underline' }}>Terms of Service</button>
+            {' '}and{' '}
+            <button type="button" onClick={e => { e.preventDefault(); onLegal('privacy') }} style={{ background:'none', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:11, padding:0, textDecoration:'underline' }}>Privacy Policy</button>.</span>
+          </label>
+        )}
+        {false && (
           <div style={{ fontSize:11, color:'#64748b', marginTop:14, lineHeight:1.7, textAlign:'center' }}>
             By creating an account you agree to our{' '}
             <button onClick={() => onLegal('terms')} style={{ background:'none', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:11, padding:0, textDecoration:'underline' }}>Terms of Service</button>
