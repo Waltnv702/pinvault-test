@@ -25,7 +25,7 @@ export default async function handler(req, res) {
     }
 
     // Profile details (admin flag, display name) are optional extras
-    const pr = await fetch(`${url}/rest/v1/profiles?select=id,display_name,is_admin`, { headers: h })
+    const pr = await fetch(`${url}/rest/v1/profiles?select=id,display_name,first_name,last_name,is_admin`, { headers: h })
     const profiles = pr.ok ? await pr.json() : []
     const byId = Object.fromEntries(profiles.map(p => [p.id, p]))
 
@@ -33,7 +33,7 @@ export default async function handler(req, res) {
       id: u.id,
       email: u.email,
       created_at: u.created_at,
-      display_name: byId[u.id]?.display_name || null,
+      display_name: [byId[u.id]?.first_name || u.user_metadata?.first_name, byId[u.id]?.last_name || u.user_metadata?.last_name].filter(Boolean).join(' ') || byId[u.id]?.display_name || null,
       is_admin: byId[u.id]?.is_admin === true,
     })).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
 
