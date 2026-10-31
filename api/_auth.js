@@ -1,6 +1,6 @@
 // Shared helpers for serverless endpoints. Files starting with "_" are not deployed as routes.
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY
 
 // Accepts either variable name for the service key (the webhook already uses SUPABASE_SERVICE_KEY)
@@ -24,10 +24,15 @@ function rateLimited(key, max, windowMs) {
 export async function requireUser(req, res, { limit = 30, windowMs = 60_000 } = {}) {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
   if (!token) { res.status(401).json({ error: 'Please sign in.' }); return null }
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) { res.status(500).json({ error: 'Auth is not configured on the server.' }); return null }
+  // Any valid project key works as the apikey header here; the user's token is what is being verified
+  const apikey = SUPABASE_ANON_KEY || serviceKey()
+  if (!SUPABASE_URL || !apikey) {
+    console.error('Auth config missing:', { url: !!SUPABASE_URL, key: !!apikey })
+    res.status(500).json({ error: `Auth is not configured on the server (missing ${!SUPABASE_URL ? 'SUPABASE_URL' : 'a Supabase key'}).` }); return null
+  }
 
   const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-    headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY }
+    headers: { Authorization: `Bearer ${token}`, apikey }
   })
   if (!r.ok) { res.status(401).json({ error: 'Your session has expired. Please sign in again.' }); return null }
   const user = await r.json()
