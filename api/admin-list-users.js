@@ -1,4 +1,4 @@
-import { requireAdmin } from './_auth.js'
+import { requireAdmin, serviceKey, supabaseUrl } from './_auth.js'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -9,11 +9,37 @@ export default async function handler(req, res) {
 
   const auth = await requireAdmin(req, res)
   if (!auth) return
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  const r = await fetch(`${url}/rest/v1/profiles?select=id,email,display_name,is_admin&order=email.asc&limit=500`, {
-    headers: { apikey: key, Authorization: `Bearer ${key}` }
-  })
-  if (!r.ok) return res.status(500).json({ error: await r.text() })
-  res.json({ users: await r.json() })
+  const url = supabaseUrl()
+  const key = serviceKey()
+  const h = { apikey: key, Authorization: `Bearer ${key}` }
+
+  try {
+    // Source of truth for accounts: the auth users list (always has email + sign-up date)
+    const users = []
+    for (let page = 1; page <= 10; page++) {
+      const r = await fetch(`${url}/auth/v1/admin/users?page=${page}&per_page=200`, { headers: h })
+      if (!r.ok) return res.status(500).json({ error: await r.text() })
+      const batch = (await r.json()).users || []
+      users.push(...batch)
+      if (batch.length < 200) break
+    }
+
+    // Profile details (admin flag, display name) are optional extras
+    const pr = await fetch(`${url}/rest/v1/profiles?select=id,display_name,is_admin`, { headers: h })
+    const profiles = pr.ok ? await pr.json() : []
+    const byId = Object.fromEntries(profiles.map(p => [p.id, p]))
+
+    const out = users.map(u => ({
+      id: u.id,
+      email: u.email,
+      created_at: u.created_at,
+      display_name: byId[u.id]?.display_name || null,
+      is_admin: byId[u.id]?.is_admin === true,
+    })).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+
+    res.json({ users: out })
+  } catch (err) {
+    console.error('admin-list-users error:', err)
+    res.status(500).json({ error: err.message })
+  }
 }
