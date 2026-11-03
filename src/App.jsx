@@ -3212,14 +3212,21 @@ const TP_PER_IMAGE = 12
 const TP_DEFAULT_TEXT = "FTO (For Trade Only) / NFS (Not For Sale)\n\nHi pin traders! 👋\n\nI'm in search of the pins in the ISO section and have the pins in the Traders section available to trade. Message me or comment if you have a match!\n\n#DisneyPins #PinTrading"
 
 function tpLoadImage(src) {
-  return new Promise(resolve => {
-    if (!src) return resolve(null)
+  const attempt = url => new Promise(resolve => {
     const img = new Image()
     img.crossOrigin = 'anonymous'
     img.onload = () => resolve(img)
     img.onerror = () => resolve(null)
-    img.src = src
+    img.src = url
   })
+  return (async () => {
+    if (!src) return null
+    let img = await attempt(src)
+    // A copy cached by a plain <img> tag has no CORS headers and fails here: retry with a fresh URL
+    if (!img && /^https?:/.test(src)) img = await attempt(src + (src.includes('?') ? '&' : '?') + 'cors=1')
+    if (!img) console.warn('Trade post: could not load image', src)
+    return img
+  })()
 }
 
 function tpWrap(ctx, text, maxWidth, maxLines) {
