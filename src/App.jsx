@@ -3290,6 +3290,23 @@ async function tpDrawPage(canvas, isoItems, traderItems, imgCache) {
   ctx.fillText('Made with CastlePins', W/2, H - 14)
 }
 
+// Cuts each pin's hotspot out of a checklist image so it can be used as a tile
+async function tpCropChecklist(cl, progress) {
+  const base = p => ({ key:`cl-${cl.id}-${p.id}`, name:p.name, status:progress[p.id] || null })
+  const img = await tpLoadImage(cl.image)
+  return cl.pins.map(p => {
+    if (!img) return { ...base(p), img:null }
+    const sx = p.left/100*img.width, sy = p.top/100*img.height
+    const sw = Math.max(1, p.width/100*img.width), sh = Math.max(1, p.height/100*img.height)
+    const scale = Math.min(1, 320 / Math.max(sw, sh))
+    const c = document.createElement('canvas'); c.width = Math.round(sw*scale); c.height = Math.round(sh*scale)
+    c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height)
+    let url = null
+    try { url = c.toDataURL('image/jpeg', 0.88) } catch { url = null }
+    return { ...base(p), img:url }
+  })
+}
+
 function TradePostGenerator({ pins, books, userId }) {
   const [iso, setIso] = useState([])
   const [traders, setTraders] = useState([])
@@ -3298,6 +3315,10 @@ function TradePostGenerator({ pins, books, userId }) {
   const [bookId, setBookId] = useState('')
   const [dbQuery, setDbQuery] = useState('')
   const [dbRows, setDbRows] = useState([])
+  const [checklists, setChecklists] = useState([])
+  const [checklistId, setChecklistId] = useState('')
+  const [clItems, setClItems] = useState([])
+  const [clLoading, setClLoading] = useState(false)
   const [text, setText] = useState(TP_DEFAULT_TEXT)
   const [copied, setCopied] = useState(false)
   const [rendering, setRendering] = useState(false)
@@ -3336,6 +3357,25 @@ function TradePostGenerator({ pins, books, userId }) {
     }, 250)
     return () => clearTimeout(t)
   }, [src, dbQuery])
+
+  useEffect(() => {
+    if (src !== 'checklist' || checklists.length) return
+    supabase.from('pin_checklists').select('*').order('title').then(({ data }) => setChecklists(data || []))
+  }, [src])
+
+  useEffect(() => {
+    if (!checklistId) { setClItems([]); return }
+    const cl = checklists.find(c => c.id === checklistId)
+    if (!cl) return
+    let cancelled = false
+    setClLoading(true)
+    ;(async () => {
+      const { data } = await supabase.from('checklist_progress').select('progress').eq('user_id', userId).eq('checklist_id', cl.id).maybeSingle()
+      const items = await tpCropChecklist(cl, data?.progress || {})
+      if (!cancelled) { setClItems(items); setClLoading(false) }
+    })()
+    return () => { cancelled = true }
+  }, [checklistId, checklists])
 
   const target = picking === 'iso' ? iso : traders
   const setTarget = picking === 'iso' ? setIso : setTraders
@@ -3383,6 +3423,7 @@ function TradePostGenerator({ pins, books, userId }) {
   if (src === 'have') pickList = pins.filter(p => p.list === 'have').map(pinItem)
   else if (src === 'want') pickList = pins.filter(p => p.list === 'want').map(pinItem)
   else if (src === 'book') pickList = bookId ? pins.filter(p => (p.book_ids||[]).includes(bookId)).map(pinItem) : []
+  else if (src === 'checklist') pickList = clItems
   else if (src === 'db') pickList = dbRows.map(r => ({ key:`db-${r.id}`, name:r.name, img:r.image_url }))
 
   const card = { background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:14, padding:14, marginBottom:14 }
@@ -3413,7 +3454,7 @@ function TradePostGenerator({ pins, books, userId }) {
         {picking === id && (
           <div style={{ marginTop:12, borderTop:'1px solid rgba(255,255,255,0.1)', paddingTop:12 }}>
             <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
-              {[['have','🎒 Collection'],['want','⭐ Wish List'],['book','📚 Books'],['db','📋 Database'],['upload','📷 Upload']].map(([k,l]) => (
+              {[['have','🎒 Collection'],['want','⭐ Wish List'],['book','📚 Books'],['checklist','✅ Checklists'],['db','📋 Database'],['upload','📷 Upload']].map(([k,l]) => (
                 <button key={k} onClick={() => setSrc(k)} style={chip(src===k)}>{l}</button>
               ))}
             </div>
@@ -3422,6 +3463,26 @@ function TradePostGenerator({ pins, books, userId }) {
                 <option value="">Choose a book...</option>
                 {books.map(b => <option key={b.id} value={b.id}>{b.emoji ? b.emoji + ' ' : ''}{b.name}</option>)}
               </select>
+            )}
+            {src === 'checklist' && (
+              <div style={{ marginBottom:10 }}>
+                <select value={checklistId} onChange={e => setChecklistId(e.target.value)} style={{ width:'100%', padding:8, borderRadius:8, marginBottom:8, background:'#1a1040', color:'#f1f5f9', border:'1px solid rgba(255,255,255,0.15)' }}>
+                  <option value="">Choose a checklist...</option>
+                  {checklists.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                </select>
+                {clItems.length > 0 && (
+                  <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                    {[['missing','❌ Add all missing'],['found','✅ Add all found']].map(([st,label]) => (
+                      <button key={st} style={chip(false)} onClick={() => {
+                        const add = clItems.filter(i => i.status === st && !isPicked(i.key))
+                        setTarget(prev => [...prev, ...add])
+                      }}>{label}</button>
+                    ))}
+                  </div>
+                )}
+                {clLoading && <div style={{ fontSize:11, color:'#64748b', marginTop:6 }}>Loading pins from the checklist...</div>}
+                {clItems.length > 0 && <div style={{ fontSize:11, color:'#64748b', marginTop:6 }}>Tap pins to add them, or use the buttons. Your found/missing marks from the checklist are shown.</div>}
+              </div>
             )}
             {src === 'db' && <input className="search-bar" placeholder="🔍 Search the pin database..." value={dbQuery} onChange={e => setDbQuery(e.target.value)} />}
             {src === 'upload' ? (
@@ -3440,6 +3501,7 @@ function TradePostGenerator({ pins, books, userId }) {
                       {it.img ? <img src={it.img} alt="" style={{ width:'100%', height:'100%', objectFit:'contain' }} /> : <span style={{ fontSize:22 }}>📌</span>}
                     </div>
                     <div style={{ fontSize:9, color:'#cbd5e1', marginTop:3, height:22, overflow:'hidden' }}>{it.name}</div>
+                    {it.status && <span style={{ position:'absolute', top:4, left:4, background: it.status==='found' ? '#34d399' : '#f87171', color:'#0b0f1a', borderRadius:8, fontSize:10, padding:'0 5px', fontWeight:'bold' }}>{it.status==='found' ? '✓' : '✕'}</span>}
                     {isPicked(it.key) && <span style={{ position:'absolute', top:4, right:4, background:'#7c3aed', color:'#fff', borderRadius:8, fontSize:10, padding:'0 5px' }}>✓</span>}
                   </button>
                 ))}
