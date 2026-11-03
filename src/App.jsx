@@ -3301,6 +3301,7 @@ async function tpDrawPage(canvas, isoItems, traderItems, imgCache) {
 async function tpCropChecklist(cl, progress) {
   const base = p => ({ key:`cl-${cl.id}-${p.id}`, name:p.name, status:progress[p.id] || null })
   const img = await tpLoadImage(cl.image)
+  console.info('[TradePost] checklist crop', { title: cl.title, imageUrl: cl.image, imageLoaded: !!img, size: img && [img.width, img.height], pinCount: (cl.pins||[]).length, samplePin: (cl.pins||[])[0] })
   return cl.pins.map(p => {
     if (!img) return { ...base(p), img:null }
     const sx = p.left/100*img.width, sy = p.top/100*img.height
@@ -3309,7 +3310,7 @@ async function tpCropChecklist(cl, progress) {
     const c = document.createElement('canvas'); c.width = Math.round(sw*scale); c.height = Math.round(sh*scale)
     c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height)
     let url = null
-    try { url = c.toDataURL('image/jpeg', 0.88) } catch { url = null }
+    try { url = c.toDataURL('image/jpeg', 0.88) } catch (e) { console.warn('[TradePost] crop blocked (canvas tainted):', e.message); url = null }
     return { ...base(p), img:url }
   })
 }
