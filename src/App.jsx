@@ -3300,8 +3300,9 @@ async function tpDrawPage(canvas, isoItems, traderItems, imgCache) {
 // Cuts each pin's hotspot out of a checklist image so it can be used as a tile
 async function tpCropChecklist(cl, progress) {
   const base = p => ({ key:`cl-${cl.id}-${p.id}`, name:p.name, status:progress[p.id] || null })
-  const img = await tpLoadImage(cl.image)
-  console.info('[TradePost] checklist crop', { title: cl.title, imageUrl: cl.image, imageLoaded: !!img, size: img && [img.width, img.height], pinCount: (cl.pins||[]).length, samplePin: (cl.pins||[])[0] })
+  const imageUrl = cl.image_url || cl.image
+  const img = await tpLoadImage(imageUrl)
+  console.info('[TradePost] checklist crop', { title: cl.title, imageUrl, imageLoaded: !!img, size: img && [img.width, img.height], pinCount: (cl.pins||[]).length, samplePin: (cl.pins||[])[0] })
   return cl.pins.map(p => {
     if (!img) return { ...base(p), img:null }
     const sx = p.left/100*img.width, sy = p.top/100*img.height
