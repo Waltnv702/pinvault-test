@@ -1093,8 +1093,9 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
 }
 
 // ── Pin List ──────────────────────────────────────────────────────────────────
-function PinList({ pins, listType, onDelete, onMove, onToggleTrader, onPinChange, loading, userId }) {
+function PinList({ pins, listType, onDelete, onMove, onToggleTrader, onPinChange, onAddFromDatabase, loading, userId }) {
   const [search, setSearch] = useState('')
+  const [dbOpen, setDbOpen] = useState(false)
   const [detailPin, setDetailPin] = useState(null)
   const storageKey = `castlepins_showdesc_list_${userId}`
   const [showDesc, setShowDesc] = useState(() => {
@@ -1124,6 +1125,14 @@ function PinList({ pins, listType, onDelete, onMove, onToggleTrader, onPinChange
       <div style={{ display:'inline-block', background:'rgba(124,58,237,0.3)', border:'1px solid rgba(124,58,237,0.5)', borderRadius:20, padding:'3px 14px', fontSize:12, color:'#c4b5fd', marginBottom:14, marginTop:4 }}>
         {loading ? 'Loading...' : `${filtered.length} pin${filtered.length!==1?'s':''}`}
       </div>
+      {dbOpen ? (
+        <DatabaseAddPanel userId={userId} defaultList={listType} showList={false} onCancel={() => setDbOpen(false)}
+          onConfirm={async payload => { await onAddFromDatabase(payload); setDbOpen(false) }} />
+      ) : (
+        <button onClick={() => setDbOpen(true)} style={{ width:'100%', padding:'12px', marginBottom:12, border:'1px solid rgba(124,58,237,0.5)', borderRadius:12, background:'rgba(124,58,237,0.18)', color:'#e2d9f3', cursor:'pointer', fontSize:14, fontWeight:'bold' }}>
+          🔎 Add a pin from the pin database
+        </button>
+      )}
       <input className="search-bar" placeholder="🔍 Search pins..." value={search} onChange={e => setSearch(e.target.value)} />
       {loading ? (
         <div style={{ textAlign:'center', padding:'60px 0', color:'#64748b' }}>
@@ -2196,9 +2205,9 @@ async function pinPayloadFromEntry(userId, entry, { imageChoice, file, list }) {
 }
 
 // Pick a pin from the database, choose picture (database or your own), then add it
-function DatabaseAddPanel({ userId, onConfirm, onCancel, defaultList = 'have', showList = true }) {
-  const [entry, setEntry] = useState(null)
-  const [imageChoice, setImageChoice] = useState('database')
+function DatabaseAddPanel({ userId, onConfirm, onCancel, defaultList = 'have', showList = true, initialEntry = null }) {
+  const [entry, setEntry] = useState(initialEntry)
+  const [imageChoice, setImageChoice] = useState(initialEntry && !initialEntry.image_url ? 'own' : 'database')
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState('')
   const [list, setList] = useState(defaultList)
@@ -2220,7 +2229,7 @@ function DatabaseAddPanel({ userId, onConfirm, onCancel, defaultList = 'have', s
   return (
     <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(124,58,237,0.35)', borderRadius:14, padding:14, marginBottom:16 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-        <div style={{ fontSize:14, fontWeight:'bold', color:'#c4b5fd' }}>🔎 Add from the pin database</div>
+        <div style={{ fontSize:14, fontWeight:'bold', color:'#c4b5fd' }}>{initialEntry ? '➕ Add to my pins' : '🔎 Add from the pin database'}</div>
         <button onClick={onCancel} style={{ background:'none', border:'none', color:'#94a3b8', cursor:'pointer', fontSize:13 }}>Cancel</button>
       </div>
       {!entry ? <DatabaseSearch onSelect={pick} autoFocus /> : (
@@ -2233,7 +2242,7 @@ function DatabaseAddPanel({ userId, onConfirm, onCancel, defaultList = 'have', s
             <div>
               <div style={{ fontSize:15, fontWeight:'bold', color:'#f1f5f9' }}>{entry.name}</div>
               <div style={{ fontSize:12, color:'#94a3b8' }}>{dbFacts(entry).map(([, v]) => v).join(' • ')}</div>
-              <button onClick={() => setEntry(null)} style={{ background:'none', border:'none', color:'#a78bfa', fontSize:12, cursor:'pointer', padding:0, marginTop:4 }}>← Choose a different pin</button>
+              {!initialEntry && <button onClick={() => setEntry(null)} style={{ background:'none', border:'none', color:'#a78bfa', fontSize:12, cursor:'pointer', padding:0, marginTop:4 }}>← Choose a different pin</button>}
             </div>
           </div>
 
@@ -3045,8 +3054,10 @@ function AdminChecklistBuilder() {
 }
 
 // ── Pin database record: clean read-only view ────────────────────────────────
-function PinRecordModal({ row, userId, isAdmin, onEdit, onClose }) {
+function PinRecordModal({ row, userId, isAdmin, onEdit, onAdd, onClose }) {
   const [owned, setOwned] = useState(null) // null = checking
+  const [adding, setAdding] = useState(false)
+  const [addedMsg, setAddedMsg] = useState('')
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -3121,6 +3132,27 @@ function PinRecordModal({ row, userId, isAdmin, onEdit, onClose }) {
           {[row.created_at && `Added ${fmtDate(row.created_at)}`, row.updated_at && fmtDate(row.updated_at) !== fmtDate(row.created_at) && `Updated ${fmtDate(row.updated_at)}`].filter(Boolean).join('  •  ')}
         </div>
 
+        {onAdd && row.status !== 'rejected' && (
+          adding ? (
+            <div style={{ marginTop:18 }}>
+              <DatabaseAddPanel userId={userId} initialEntry={row} onCancel={() => setAdding(false)}
+                onConfirm={async payload => {
+                  await onAdd(payload)
+                  setAdding(false)
+                  setAddedMsg(payload.list === 'want' ? 'Added to your wish list ✓' : 'Added to your collection ✓')
+                  setOwned(o => ({ ...(o || {}), viaName: false, have: payload.list === 'have' || o?.have, want: payload.list === 'want' || o?.want }))
+                }} />
+            </div>
+          ) : (
+            <div style={{ marginTop:18 }}>
+              {addedMsg && <div style={{ textAlign:'center', color:'#34d399', fontSize:13, fontWeight:'bold', marginBottom:8 }}>{addedMsg}</div>}
+              <button onClick={() => { setAdding(true); setAddedMsg('') }} style={{ width:'100%', padding:'12px', borderRadius:10, border:'none', background:'linear-gradient(135deg,#7c3aed,#db2777)', color:'#fff', fontSize:14, fontWeight:'bold', cursor:'pointer' }}>
+                {owned && (owned.have || owned.want) ? '➕ Add another to my pins' : '➕ Add to my collection'}
+              </button>
+            </div>
+          )
+        )}
+
         <div style={{ display:'flex', gap:8, marginTop:18 }}>
           <button onClick={() => { onEdit(row); onClose() }} style={{ flex:1, padding:'11px', borderRadius:10, border:'1px solid rgba(124,58,237,0.6)', background:'rgba(124,58,237,0.25)', color:'#e2d9f3', fontSize:13, fontWeight:'bold', cursor:'pointer' }}>{isAdmin ? '✏️ Edit' : '✏️ Suggest a change'}</button>
           <button onClick={onClose} style={{ flex:1, padding:'11px', borderRadius:10, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', fontSize:13, fontWeight:'bold', cursor:'pointer' }}>Close</button>
@@ -3153,7 +3185,7 @@ function shrinkPhoto(file, max = 1000) {
   })
 }
 
-function AdminPinDatabase({ isAdmin = false, userId }) {
+function AdminPinDatabase({ isAdmin = false, userId, onAddFromDatabase }) {
   const [viewRow, setViewRow] = useState(null)
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -3599,7 +3631,7 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
           ))}
         </div>
       )}
-      {viewRow && <PinRecordModal row={viewRow} userId={userId} isAdmin={isAdmin} onEdit={startEdit} onClose={() => setViewRow(null)} />}
+      {viewRow && <PinRecordModal row={viewRow} userId={userId} isAdmin={isAdmin} onEdit={startEdit} onAdd={onAddFromDatabase} onClose={() => setViewRow(null)} />}
     </div>
   )
 }
@@ -4643,8 +4675,8 @@ export default function App() {
       {/* Main */}
       <div className="app-body">
       <div className="main-content">
-        {tab==='have'    && <PinList pins={pins} listType="have" onDelete={deletePin} onMove={movePin} onToggleTrader={TRADING_ENABLED ? toggleTrader : undefined} onPinChange={updatePinLocal} loading={pinsLoading} userId={user.id} />}
-        {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} onToggleTrader={TRADING_ENABLED ? toggleTrader : undefined} onPinChange={updatePinLocal} loading={pinsLoading} userId={user.id} />}
+        {tab==='have'    && <PinList pins={pins} listType="have" onDelete={deletePin} onMove={movePin} onToggleTrader={TRADING_ENABLED ? toggleTrader : undefined} onPinChange={updatePinLocal} onAddFromDatabase={addPinFromDatabase} loading={pinsLoading} userId={user.id} />}
+        {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} onToggleTrader={TRADING_ENABLED ? toggleTrader : undefined} onPinChange={updatePinLocal} onAddFromDatabase={addPinFromDatabase} loading={pinsLoading} userId={user.id} />}
         {tab==='books'   && (
           <div>
             <div style={{ display:'flex', gap:8, marginBottom:14 }}>
@@ -4669,7 +4701,7 @@ export default function App() {
         {tab==='add'     && (multiScan && hasAccess ? <MultiPinScanner onAddMultiple={addMultiplePins} userId={user.id} onClose={() => setMultiScan(false)} /> : <AddPinForm onAdd={addPin} userId={user.id} hasAccess={hasAccess} onUpgrade={handleUpgrade} onMultiScan={() => setMultiScan(true)} />)}
         {tab==='mailtrades' && <MailTradesPage userId={user.id} />}
         {tab==='tradepost' && <TradePostGenerator pins={pins} books={books} userId={user.id} />}
-        {tab==='pindb'   && <AdminPinDatabase isAdmin={isAdminUser} userId={user.id} />}
+        {tab==='pindb'   && <AdminPinDatabase isAdmin={isAdminUser} userId={user.id} onAddFromDatabase={addPinFromDatabase} />}
         {tab==='pin-review' && isAdminUser && <AdminReviewQueue userId={user.id} />}
         {tab==='users' && isAdminUser && <AdminUsers currentUserId={user.id} />}
         {tab==='checklist-admin' && isAdminUser && <AdminChecklistBuilder />}
