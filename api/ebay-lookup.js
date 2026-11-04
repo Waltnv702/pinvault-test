@@ -57,6 +57,7 @@ export default async function handler(req, res) {
 
     const data = await ebayResp.json()
     const items = (data.itemSummaries || []).map(item => ({
+      itemId: item.itemId,
       title: item.title,
       price: item.price?.value ? `$${item.price.value}` : null,
       condition: item.condition || null,
