@@ -34,18 +34,28 @@ const css = `
     .main-content { padding: 28px 24px 40px 24px; }
   }
 
-  /* Top nav desktop */
-  .top-nav { display: none; }
+  /* Side nav desktop */
+  .side-nav { display: none; }
+  .app-body { min-width: 0; }
   @media (min-width: 768px) {
-    .top-nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 28px;
+    .side-nav {
+      display: flex; flex-direction: column;
+      position: fixed; top: 0; left: 0; bottom: 0; width: 220px;
+      padding: 18px 12px; overflow-y: auto;
       background: rgba(255,255,255,0.03);
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      position: sticky; top: 0; z-index: 100;
+      border-right: 1px solid rgba(255,255,255,0.08);
+      z-index: 100;
     }
+    .app-body { margin-left: 220px; }
+    .side-label { font-size: 10px; letter-spacing: 1.5px; color: #64748b; font-weight: bold; margin: 16px 10px 6px; text-transform: uppercase; }
+    .side-btn {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      padding: 10px 12px; margin-bottom: 2px; border-radius: 10px;
+      border: 1px solid transparent; background: transparent;
+      color: #94a3b8; cursor: pointer; font-size: 14px; font-weight: bold; text-align: left;
+    }
+    .side-btn:hover { background: rgba(255,255,255,0.05); }
+    .side-btn.active { background: rgba(124,58,237,0.25); border-color: rgba(124,58,237,0.5); color: #e2d9f3; }
   }
 
   /* Mobile header */
@@ -3295,7 +3305,7 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
       {isAdmin && (<>
       <div style={{ background:'rgba(124,58,237,0.06)', border:'1px solid rgba(124,58,237,0.25)', borderRadius:12, padding:14, marginBottom:16 }}>
         <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:8 }}>🔍 eBay Reference Lookup</div>
-        <div style={{ fontSize:11, color:'#94a3b8', marginBottom:10 }}>Search eBay for a pin title or value. Tap "Fill form" on a listing to copy its details (name, series, year, edition and so on) into the form below. You add the photo.</div>
+        <div style={{ fontSize:11, color:'#94a3b8', marginBottom:10 }}>Once your pin is identified, use the name to get a value from eBay. Search eBay for a pin title or value, then tap "Fill form" on a listing to copy its details (name, series, year, edition and so on) into the form below. You add the photo.</div>
         <div style={{ display:'flex', gap:8, marginBottom:10 }}>
           <input style={{...inputStyle, marginBottom:0, flex:1}} placeholder="e.g. Hatbox Ghost Hidden Disney 2025"
             value={ebayQuery} onChange={e => setEbayQuery(e.target.value)}
@@ -3334,7 +3344,7 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
 
       <div style={{ background:'rgba(124,58,237,0.06)', border:'1px solid rgba(124,58,237,0.25)', borderRadius:12, padding:14, marginBottom:16 }}>
         <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:8 }}>📷 Photo Reference Lookup</div>
-        <div style={{ fontSize:11, color:'#94a3b8', marginBottom:10 }}>Upload a photo to find visually similar pins across the web. Tap "Fill form" on a result to copy its details into the form below. You add the photo.</div>
+        <div style={{ fontSize:11, color:'#94a3b8', marginBottom:10 }}>Use this feature to identify a pin by a photo. Upload a photo to find visually similar pins across the web. Tap "Fill form" on a result to copy its details into the form below. You add the photo.</div>
 
         <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:10 }}>
           {lensPreview && <img src={lensPreview} alt="" style={{ width:44, height:44, borderRadius:8, objectFit:'cover', border:'1px solid rgba(255,255,255,0.15)' }} />}
@@ -4494,27 +4504,40 @@ export default function App() {
     <div style={{ minHeight:'100vh', background:'linear-gradient(160deg,#0f0a1e,#1a1040,#0f172a)' }}>
       <style>{css}</style>
 
-      {/* Desktop top nav */}
-      <div className="top-nav">
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+      {/* Desktop side nav */}
+      <div className="side-nav">
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'4px 8px 10px' }}>
           <span style={{ fontSize:26 }}>🏰</span>
-          <span style={{ fontSize:20, color:'#f9fafb', letterSpacing:3, fontWeight:'bold' }}>CastlePins</span>
+          <span style={{ fontSize:19, color:'#f9fafb', letterSpacing:2, fontWeight:'bold' }}>CastlePins</span>
         </div>
-        <div style={{ display:'flex', gap:4 }}>
-          {navItems.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              style={{ padding:'8px 15px', border:`1px solid ${tab===t.id?'rgba(124,58,237,0.5)':'transparent'}`, borderRadius:10, background:tab===t.id?'rgba(124,58,237,0.25)':'transparent', color:tab===t.id?'#e2d9f3':'#94a3b8', cursor:'pointer', fontSize:13, fontWeight:'bold', display:'flex', alignItems:'center', gap:6 }}>
-              {t.icon} {t.label}
-              {t.count != null && t.count > 0 && <span style={{ background:'rgba(124,58,237,0.5)', color:'#e2d9f3', borderRadius:10, padding:'1px 7px', fontSize:11 }}>{t.count}</span>}
-            </button>
-          ))}
-        </div>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <div style={{ width:34, height:34, borderRadius:'50%', background:'linear-gradient(135deg,#7c3aed,#db2777)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:'bold', color:'#fff' }}>
-            {user.email[0].toUpperCase()}
-          </div>
-          <div style={{ fontSize:11, color:'#64748b', maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{user.email}</div>
-        </div>
+        {[
+          ['My Pins', ['have','want','books','mystery','add']],
+          ['Tools', ['mailtrades','tradepost','pindb','trade']],
+          ['Admin', ['pin-review','users','checklist-admin']],
+        ].map(([label, ids]) => {
+          const items = ids.map(id => navItems.find(t => t.id === id)).filter(Boolean)
+          if (items.length === 0) return null
+          return (
+            <div key={label}>
+              <div className="side-label">{label}</div>
+              {items.map(t => (
+                <button key={t.id} className={`side-btn ${tab===t.id?'active':''}`} onClick={() => setTab(t.id)}>
+                  <span style={{ width:22, textAlign:'center' }}>{t.icon}</span>
+                  <span style={{ flex:1 }}>{t.label}</span>
+                  {t.count != null && t.count > 0 && <span style={{ background:'rgba(124,58,237,0.5)', color:'#e2d9f3', borderRadius:10, padding:'1px 7px', fontSize:11 }}>{t.count}</span>}
+                </button>
+              ))}
+            </div>
+          )
+        })}
+        <div style={{ flex:1 }} />
+        <button className={`side-btn ${tab==='profile'?'active':''}`} onClick={() => setTab('profile')} style={{ marginTop:14, borderTop:'1px solid rgba(255,255,255,0.08)', borderRadius:10 }}>
+          <span style={{ width:30, height:30, borderRadius:'50%', background:'linear-gradient(135deg,#7c3aed,#db2777)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:'bold', color:'#fff', flexShrink:0 }}>{user.email[0].toUpperCase()}</span>
+          <span style={{ minWidth:0 }}>
+            <span style={{ display:'block', fontSize:13 }}>Profile</span>
+            <span style={{ display:'block', fontSize:10, color:'#64748b', fontWeight:'normal', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{user.email}</span>
+          </span>
+        </button>
       </div>
 
       {/* Mobile header */}
@@ -4529,6 +4552,7 @@ export default function App() {
       </div>
 
       {/* Main */}
+      <div className="app-body">
       <div className="main-content">
         {tab==='have'    && <PinList pins={pins} listType="have" onDelete={deletePin} onMove={movePin} onToggleTrader={TRADING_ENABLED ? toggleTrader : undefined} onPinChange={updatePinLocal} loading={pinsLoading} userId={user.id} />}
         {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} onToggleTrader={TRADING_ENABLED ? toggleTrader : undefined} onPinChange={updatePinLocal} loading={pinsLoading} userId={user.id} />}
@@ -4562,6 +4586,7 @@ export default function App() {
         {tab==='checklist-admin' && isAdminUser && <AdminChecklistBuilder />}
         {tab==='trade'   && TRADING_ENABLED && <TradingPage user={user} pins={pins} hasAccess={hasAccess} profile={profile} onUpdateProfile={updateProfile} onUpgrade={handleUpgrade} onLegal={setLegalPage} />}
         {tab==='profile' && <ProfilePage user={user} haveCount={haveCount} wantCount={wantCount} subscription={subscription} onUpgrade={handleUpgrade} profile={profile} onUpdateProfile={updateProfile} onLegal={setLegalPage} />}
+      </div>
       </div>
 
       {/* Mobile bottom nav: five main tabs + More */}
