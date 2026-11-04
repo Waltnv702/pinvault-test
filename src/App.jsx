@@ -3632,6 +3632,7 @@ function MailTradesPage({ userId }) {
     setRows(prev => prev.filter(r => r.id !== row.id))
   }
   async function runImport() {
+    setError('')
     // Paste rows copied from Excel: Trader | Date of Trade | Pins to receive | Pins sent | Date sent | Tracking | Status
     const lines = importText.split(/\r?\n/).map(l => l.split('\t')).filter(c => c.some(x => x.trim()))
     const body = lines.filter(c => !/^trader$/i.test((c[0] || '').trim()))
@@ -3646,7 +3647,7 @@ function MailTradesPage({ userId }) {
     if (!records.length) { setError('Nothing to import. Copy the rows from your spreadsheet and paste them here.'); return }
     const { error } = await supabase.from('mail_trades').insert(records)
     if (error) { setError(error.message); return }
-    setImportText(''); setShowImport(false); load()
+    setImportText(''); setShowImport(false); setError(''); load()
   }
 
   const withStatus = rows.map(r => ({ ...r, ds: mtDisplayStatus(r) }))
@@ -3670,7 +3671,7 @@ function MailTradesPage({ userId }) {
           <button key={k} onClick={() => setFilter(k)} style={chip(filter === k)}>{l} ({counts[k]})</button>
         ))}
         <div style={{ flex:1 }} />
-        <button onClick={() => setShowImport(v => !v)} style={chip(showImport)}>Paste from spreadsheet</button>
+        <button onClick={() => { setShowImport(v => !v); setError('') }} style={chip(showImport)}>Paste from spreadsheet</button>
         <button onClick={addRow} style={primary}>+ Add trade</button>
       </div>
 
