@@ -3056,26 +3056,31 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
   const [fillingId, setFillingId] = useState(null)
   const [fillMsg, setFillMsg] = useState('')
 
-  // Fill the form from the text of an eBay listing (no photo is copied)
-  async function fillFromEbay(r) {
-    if (editing && !window.confirm('Replace the details in this record with information from the eBay listing?')) return
-    setFillingId(r.itemId); setFillMsg(''); setEbayError('')
+  // Fill the form from listing text (no photo is ever copied)
+  function applyFilled(f) {
+    const filled = []
+    const next = {}
+    for (const k of ['name','series','park','release_year','edition_size','description','estimated_value','source_link']) {
+      if (f[k] !== '' && f[k] !== null && f[k] !== undefined) { next[k] = String(f[k]); filled.push(k.replace('_',' ')) }
+    }
+    setForm(prev => ({ ...prev, ...next }))
+    setFillMsg(filled.length ? `Filled in: ${filled.join(', ')}. Check the details below, and add your own photo.` : 'That result did not contain details I could use.')
+    if (filled.length) setTimeout(() => document.getElementById('db-form')?.scrollIntoView({ behavior:'smooth', block:'start' }), 100)
+  }
+  async function fillFrom(id, url, body, extra = {}) {
+    if (editing && !window.confirm('Replace the details in this record with information from the listing?')) return
+    setFillingId(id); setFillMsg(''); setEbayError(''); setLensError('')
     try {
-      const res = await fetch('/api/ebay-item', { method:'POST', headers: await authHeaders(), body: JSON.stringify({ itemId: r.itemId }) })
+      const res = await fetch(url, { method:'POST', headers: await authHeaders(), body: JSON.stringify(body) })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Could not read that listing')
-      const f = data.fields
-      const filled = []
-      const next = {}
-      for (const k of ['name','series','park','release_year','edition_size','description','estimated_value','source_link']) {
-        if (f[k] !== '' && f[k] !== null && f[k] !== undefined) { next[k] = String(f[k]); filled.push(k.replace('_',' ')) }
-      }
-      setForm(prev => ({ ...prev, ...next }))
-      setFillMsg(filled.length ? `Filled in: ${filled.join(', ')}. Check the details below, and add your own photo.` : 'That listing did not contain details I could use.')
-      if (filled.length) setTimeout(() => document.getElementById('db-form')?.scrollIntoView({ behavior:'smooth', block:'start' }), 100)
-    } catch (e) { setEbayError(e.message) }
+      if (!res.ok) throw new Error(data.error || 'Could not read that result')
+      applyFilled({ ...data.fields, ...extra })
+    } catch (e) { (url.includes('ebay') ? setEbayError : setLensError)(e.message) }
     setFillingId(null)
   }
+  const fillFromEbay = r => fillFrom(r.itemId, '/api/ebay-item', { itemId: r.itemId })
+  const fillFromLens = (m, i) => fillFrom('lens-' + i, '/api/pin-from-text', { title: m.title, source: m.source, snippet: m.snippet },
+    { ...(typeof m.price === 'number' ? { estimated_value: m.price } : {}), ...(m.link ? { source_link: m.link } : {}) })
 
   // Photo reference lookup (reverse image search) - also purely informational
   const [lensPreview, setLensPreview] = useState('')
@@ -3309,7 +3314,7 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
 
       <div style={{ background:'rgba(124,58,237,0.06)', border:'1px solid rgba(124,58,237,0.25)', borderRadius:12, padding:14, marginBottom:16 }}>
         <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:8 }}>📷 Photo Reference Lookup</div>
-        <div style={{ fontSize:11, color:'#94a3b8', marginBottom:10 }}>Upload a photo to find visually similar pins across the web — this is just a reference, it won't fill in the form for you.</div>
+        <div style={{ fontSize:11, color:'#94a3b8', marginBottom:10 }}>Upload a photo to find visually similar pins across the web. Tap "Fill form" on a result to copy its details into the form below. You add the photo.</div>
 
         <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:10 }}>
           {lensPreview && <img src={lensPreview} alt="" style={{ width:44, height:44, borderRadius:8, objectFit:'cover', border:'1px solid rgba(255,255,255,0.15)' }} />}
@@ -3321,6 +3326,7 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
         <input ref={lensFileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={lookupByPhoto} />
 
         {lensError && <div style={{ color:'#f87171', fontSize:12 }}>{lensError}</div>}
+        {fillMsg && <div style={{ fontSize:12, color:'#34d399', marginBottom:8 }}>✓ {fillMsg}</div>}
 
         {lensResults && lensResults.length === 0 && (
           <div style={{ color:'#64748b', fontSize:12 }}>No visual matches found for that photo.</div>
@@ -3357,6 +3363,9 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
                         {hasPrice ? `$${m.price.toFixed(2)}` : m.source}
                       </div>
                     </a>
+                    <button onClick={() => fillFromLens(m, i)} disabled={fillingId !== null}
+                      style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(124,58,237,0.6)', background:'rgba(124,58,237,0.25)', color:'#e2d9f3', fontSize:11, fontWeight:'bold', cursor:'pointer', whiteSpace:'nowrap', opacity: fillingId !== null ? .6 : 1 }}>
+                      {fillingId === 'lens-' + i ? 'Reading...' : 'Fill form'}</button>
                   </div>
                 )
               })}
