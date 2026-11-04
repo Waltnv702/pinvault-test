@@ -4,31 +4,99 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "functions": {
-    "api/identify-pin.js":        { "maxDuration": 30 },
-    "api/identify-pins-multi.js": { "maxDuration": 60 },
-    "api/detect-pin-names.js":    { "maxDuration": 30 },
-    "api/ebay-lookup.js":         { "maxDuration": 15 },
-    "api/create-checkout.js":     { "maxDuration": 10 },
-    "api/stripe-webhook.js":      { "maxDuration": 10 },
-    "api/customer-portal.js":     { "maxDuration": 10 },
-    "api/delete-account.js":      { "maxDuration": 30 },
-    "api/admin-delete-user.js":   { "maxDuration": 30 },
-    "api/admin-list-users.js":    { "maxDuration": 15 }
+    "api/identify-pin.js": {
+      "maxDuration": 30
+    },
+    "api/identify-pins-multi.js": {
+      "maxDuration": 60
+    },
+    "api/detect-pin-names.js": {
+      "maxDuration": 30
+    },
+    "api/ebay-lookup.js": {
+      "maxDuration": 15
+    },
+    "api/create-checkout.js": {
+      "maxDuration": 10
+    },
+    "api/stripe-webhook.js": {
+      "maxDuration": 10
+    },
+    "api/customer-portal.js": {
+      "maxDuration": 10
+    },
+    "api/delete-account.js": {
+      "maxDuration": 30
+    },
+    "api/admin-delete-user.js": {
+      "maxDuration": 30
+    },
+    "api/admin-list-users.js": {
+      "maxDuration": 15
+    },
+    "api/ebay-item.js": {
+      "maxDuration": 30
+    }
   },
   "routes": [
-    { "src": "/api/identify-pin",        "dest": "/api/identify-pin.js" },
-    { "src": "/api/identify-pins-multi", "dest": "/api/identify-pins-multi.js" },
-    { "src": "/api/detect-pin-names",    "dest": "/api/detect-pin-names.js" },
-    { "src": "/api/ebay-lookup",         "dest": "/api/ebay-lookup.js" },
-    { "src": "/api/create-checkout",     "dest": "/api/create-checkout.js" },
-    { "src": "/api/stripe-webhook",      "dest": "/api/stripe-webhook.js" },
-    { "src": "/api/customer-portal",     "dest": "/api/customer-portal.js" },
-    { "src": "/api/delete-account",      "dest": "/api/delete-account.js" },
-    { "src": "/api/admin-delete-user",   "dest": "/api/admin-delete-user.js" },
-    { "src": "/api/admin-list-users",    "dest": "/api/admin-list-users.js" },
-    { "src": "/sw.js",                   "dest": "/sw.js" },
-    { "src": "/manifest.json",           "dest": "/manifest.json" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)",                    "dest": "/index.html" }
+    {
+      "src": "/api/identify-pin",
+      "dest": "/api/identify-pin.js"
+    },
+    {
+      "src": "/api/identify-pins-multi",
+      "dest": "/api/identify-pins-multi.js"
+    },
+    {
+      "src": "/api/detect-pin-names",
+      "dest": "/api/detect-pin-names.js"
+    },
+    {
+      "src": "/api/ebay-lookup",
+      "dest": "/api/ebay-lookup.js"
+    },
+    {
+      "src": "/api/ebay-item",
+      "dest": "/api/ebay-item.js"
+    },
+    {
+      "src": "/api/create-checkout",
+      "dest": "/api/create-checkout.js"
+    },
+    {
+      "src": "/api/stripe-webhook",
+      "dest": "/api/stripe-webhook.js"
+    },
+    {
+      "src": "/api/customer-portal",
+      "dest": "/api/customer-portal.js"
+    },
+    {
+      "src": "/api/delete-account",
+      "dest": "/api/delete-account.js"
+    },
+    {
+      "src": "/api/admin-delete-user",
+      "dest": "/api/admin-delete-user.js"
+    },
+    {
+      "src": "/api/admin-list-users",
+      "dest": "/api/admin-list-users.js"
+    },
+    {
+      "src": "/sw.js",
+      "dest": "/sw.js"
+    },
+    {
+      "src": "/manifest.json",
+      "dest": "/manifest.json"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
   ]
 }
