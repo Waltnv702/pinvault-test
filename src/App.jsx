@@ -3053,6 +3053,29 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
   const [ebayResults, setEbayResults] = useState(null)
   const [ebayLoading, setEbayLoading] = useState(false)
   const [ebayError, setEbayError] = useState('')
+  const [fillingId, setFillingId] = useState(null)
+  const [fillMsg, setFillMsg] = useState('')
+
+  // Fill the form from the text of an eBay listing (no photo is copied)
+  async function fillFromEbay(r) {
+    if (editing && !window.confirm('Replace the details in this record with information from the eBay listing?')) return
+    setFillingId(r.itemId); setFillMsg(''); setEbayError('')
+    try {
+      const res = await fetch('/api/ebay-item', { method:'POST', headers: await authHeaders(), body: JSON.stringify({ itemId: r.itemId }) })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not read that listing')
+      const f = data.fields
+      const filled = []
+      const next = {}
+      for (const k of ['name','series','park','release_year','edition_size','description','estimated_value','source_link']) {
+        if (f[k] !== '' && f[k] !== null && f[k] !== undefined) { next[k] = String(f[k]); filled.push(k.replace('_',' ')) }
+      }
+      setForm(prev => ({ ...prev, ...next }))
+      setFillMsg(filled.length ? `Filled in: ${filled.join(', ')}. Check the details below, and add your own photo.` : 'That listing did not contain details I could use.')
+      if (filled.length) setTimeout(() => document.getElementById('db-form')?.scrollIntoView({ behavior:'smooth', block:'start' }), 100)
+    } catch (e) { setEbayError(e.message) }
+    setFillingId(null)
+  }
 
   // Photo reference lookup (reverse image search) - also purely informational
   const [lensPreview, setLensPreview] = useState('')
@@ -3247,7 +3270,7 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
       {isAdmin && (<>
       <div style={{ background:'rgba(124,58,237,0.06)', border:'1px solid rgba(124,58,237,0.25)', borderRadius:12, padding:14, marginBottom:16 }}>
         <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:8 }}>🔍 eBay Reference Lookup</div>
-        <div style={{ fontSize:11, color:'#94a3b8', marginBottom:10 }}>Search eBay for a pin title or value — this is just a reference, it won't fill in the form for you.</div>
+        <div style={{ fontSize:11, color:'#94a3b8', marginBottom:10 }}>Search eBay for a pin title or value. Tap "Fill form" on a listing to copy its details (name, series, year, edition and so on) into the form below. You add the photo.</div>
         <div style={{ display:'flex', gap:8, marginBottom:10 }}>
           <input style={{...inputStyle, marginBottom:0, flex:1}} placeholder="e.g. Hatbox Ghost Hidden Disney 2025"
             value={ebayQuery} onChange={e => setEbayQuery(e.target.value)}
@@ -3267,18 +3290,21 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
         {ebayResults && ebayResults.length > 0 && (
           <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:280, overflowY:'auto' }}>
             {ebayResults.map((r, i) => (
-              <a key={i} href={r.link} target="_blank" rel="noopener noreferrer"
-                style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(255,255,255,0.04)', borderRadius:8, padding:8, textDecoration:'none' }}>
+              <div key={i} style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(255,255,255,0.04)', borderRadius:8, padding:8 }}>
                 {r.thumbnail && <img src={r.thumbnail} alt="" style={{ width:36, height:36, borderRadius:6, objectFit:'cover', flexShrink:0 }} />}
-                <div style={{ flex:1, minWidth:0 }}>
+                <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ flex:1, minWidth:0, textDecoration:'none' }}>
                   <div style={{ fontSize:11, color:'#e2e8f0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.title}</div>
                   <div style={{ fontSize:11, color:'#34d399', fontWeight:'bold' }}>{r.price || '—'} {r.condition && <span style={{ color:'#64748b', fontWeight:'normal' }}>({r.condition})</span>}</div>
-                </div>
-              </a>
+                </a>
+                {r.itemId && <button onClick={() => fillFromEbay(r)} disabled={fillingId !== null}
+                  style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(124,58,237,0.6)', background:'rgba(124,58,237,0.25)', color:'#e2d9f3', fontSize:11, fontWeight:'bold', cursor:'pointer', whiteSpace:'nowrap', opacity: fillingId !== null ? .6 : 1 }}>
+                  {fillingId === r.itemId ? 'Reading...' : 'Fill form'}</button>}
+              </div>
             ))}
           </div>
         )}
-        <div style={{ fontSize:9, color:'#64748b', marginTop:8 }}>Active eBay listing prices, not confirmed sold prices.</div>
+        {fillMsg && <div style={{ fontSize:12, color:'#34d399', marginTop:8 }}>✓ {fillMsg}</div>}
+        <div style={{ fontSize:9, color:'#64748b', marginTop:8 }}>Active eBay listing prices, not confirmed sold prices. "Fill form" copies details from the listing text only, never the photo.</div>
       </div>
 
       <div style={{ background:'rgba(124,58,237,0.06)', border:'1px solid rgba(124,58,237,0.25)', borderRadius:12, padding:14, marginBottom:16 }}>
@@ -3340,7 +3366,7 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
       </div>
       </>)}
 
-      <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, padding:14, marginBottom:20 }}>
+      <div id="db-form" style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, padding:14, marginBottom:20 }}>
         <div style={{ fontSize:13, fontWeight:'bold', color:'#c4b5fd', marginBottom:10 }}>
           {editing ? (isAdmin ? '✏️ Edit Pin' : '✏️ Suggest a Change') : (isAdmin ? '➕ Add New Pin' : '➕ Submit a New Pin')}
         </div>
