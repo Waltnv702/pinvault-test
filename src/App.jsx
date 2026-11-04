@@ -3044,6 +3044,92 @@ function AdminChecklistBuilder() {
   )
 }
 
+// ── Pin database record: clean read-only view ────────────────────────────────
+function PinRecordModal({ row, userId, isAdmin, onEdit, onClose }) {
+  const [owned, setOwned] = useState(null) // null = checking
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const { data: linked } = await supabase.from('pins').select('id, list').eq('user_id', userId).eq('database_id', row.id)
+      let found = linked || []
+      let viaName = false
+      if (found.length === 0 && row.name) {
+        const esc = row.name.trim().replace(/[\\%_]/g, m => '\\' + m)
+        const { data: byName } = await supabase.from('pins').select('id, list').eq('user_id', userId).ilike('name', esc)
+        found = byName || []; viaName = found.length > 0
+      }
+      if (!cancelled) setOwned({ have: found.some(p => p.list === 'have'), want: found.some(p => p.list === 'want'), viaName })
+    })()
+    return () => { cancelled = true }
+  }, [row.id])
+
+  const fields = [
+    ['Series', row.series], ['Park', row.park], ['Release year', row.release_year], ['Edition size', row.edition_size],
+    ['Estimated value', row.estimated_value != null ? `$${Number(row.estimated_value).toFixed(2)}` : null],
+  ]
+  const fmtDate = d => d ? new Date(d).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : null
+
+  let flag = null
+  if (owned === null) flag = { text:'Checking your collection...', color:'#64748b', bg:'rgba(255,255,255,0.05)', bd:'rgba(255,255,255,0.1)' }
+  else if (owned.have) flag = { text: owned.viaName ? '✓ Probably in your collection (same name)' : '✓ In your collection', color:'#34d399', bg:'rgba(52,211,153,0.12)', bd:'rgba(52,211,153,0.4)' }
+  else if (owned.want) flag = { text: owned.viaName ? '⭐ Probably on your wish list (same name)' : '⭐ On your wish list', color:'#fbbf24', bg:'rgba(251,191,36,0.12)', bd:'rgba(251,191,36,0.4)' }
+  else flag = { text:'Not in your collection', color:'#94a3b8', bg:'rgba(255,255,255,0.05)', bd:'rgba(255,255,255,0.12)' }
+
+  return (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(0,0,0,0.72)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width:'100%', maxWidth:520, maxHeight:'92vh', overflowY:'auto', background:'#1a1040', border:'1px solid rgba(124,58,237,0.4)', borderRadius:20, padding:'20px 20px 18px' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10 }}>
+          <div>
+            <div style={{ fontSize:20, fontWeight:'bold', color:'#f8fafc', lineHeight:1.25 }}>{row.name}</div>
+            {row.status && row.status !== 'approved' && (
+              <span style={{ display:'inline-block', marginTop:6, fontSize:10, fontWeight:'bold', letterSpacing:.5, color: row.status === 'pending' ? '#fbbf24' : '#f87171', border:`1px solid ${row.status === 'pending' ? 'rgba(251,191,36,0.4)' : 'rgba(248,113,113,0.4)'}`, borderRadius:5, padding:'1px 6px' }}>{row.status.toUpperCase()}</span>
+            )}
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{ background:'none', border:'none', color:'#94a3b8', fontSize:26, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+
+        <div style={{ margin:'14px 0', borderRadius:14, overflow:'hidden', background:'#e2e8f0', display:'flex', alignItems:'center', justifyContent:'center', minHeight:180, maxHeight:340 }}>
+          {row.image_url ? <img src={row.image_url} alt={row.name} style={{ maxWidth:'100%', maxHeight:340, objectFit:'contain' }} /> : <span style={{ fontSize:64, opacity:.4 }}>📌</span>}
+        </div>
+
+        <div style={{ textAlign:'center', fontSize:13, fontWeight:'bold', color:flag.color, background:flag.bg, border:`1px solid ${flag.bd}`, borderRadius:10, padding:'8px 10px', marginBottom:14 }}>{flag.text}</div>
+
+        <div style={{ borderTop:'1px solid rgba(255,255,255,0.08)' }}>
+          {fields.map(([k, v]) => (
+            <div key={k} style={{ display:'flex', justifyContent:'space-between', gap:14, padding:'10px 2px', borderBottom:'1px solid rgba(255,255,255,0.08)', fontSize:14 }}>
+              <span style={{ color:'#94a3b8' }}>{k}</span>
+              <span style={{ color: v ? '#f1f5f9' : '#475569', textAlign:'right' }}>{v || '—'}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop:14 }}>
+          <div style={{ fontSize:12, color:'#94a3b8', marginBottom:4 }}>Description</div>
+          <div style={{ fontSize:14, color: row.description ? '#e2e8f0' : '#475569', lineHeight:1.6 }}>{row.description || 'No description yet.'}</div>
+        </div>
+
+        {row.source_link && (
+          <div style={{ marginTop:14, fontSize:13 }}>
+            <span style={{ color:'#94a3b8' }}>Source: </span>
+            {/^https?:\/\//.test(row.source_link)
+              ? <a href={row.source_link} target="_blank" rel="noopener noreferrer" style={{ color:'#a78bfa', wordBreak:'break-all' }}>Open link ↗</a>
+              : <span style={{ color:'#cbd5e1' }}>{row.source_link}</span>}
+          </div>
+        )}
+
+        <div style={{ marginTop:16, fontSize:11, color:'#64748b' }}>
+          {[row.created_at && `Added ${fmtDate(row.created_at)}`, row.updated_at && fmtDate(row.updated_at) !== fmtDate(row.created_at) && `Updated ${fmtDate(row.updated_at)}`].filter(Boolean).join('  •  ')}
+        </div>
+
+        <div style={{ display:'flex', gap:8, marginTop:18 }}>
+          <button onClick={() => { onEdit(row); onClose() }} style={{ flex:1, padding:'11px', borderRadius:10, border:'1px solid rgba(124,58,237,0.6)', background:'rgba(124,58,237,0.25)', color:'#e2d9f3', fontSize:13, fontWeight:'bold', cursor:'pointer' }}>{isAdmin ? '✏️ Edit' : '✏️ Suggest a change'}</button>
+          <button onClick={onClose} style={{ flex:1, padding:'11px', borderRadius:10, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#94a3b8', fontSize:13, fontWeight:'bold', cursor:'pointer' }}>Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Resizes a photo to a JPEG (max 1000px), the same way the Add Pin form does before searching
 function shrinkPhoto(file, max = 1000) {
   return new Promise((resolve, reject) => {
@@ -3068,6 +3154,7 @@ function shrinkPhoto(file, max = 1000) {
 }
 
 function AdminPinDatabase({ isAdmin = false, userId }) {
+  const [viewRow, setViewRow] = useState(null)
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -3505,12 +3592,14 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
                   {row.estimated_value != null && <span style={{ color:'#34d399' }}> • ${row.estimated_value}</span>}
                 </div>
               </div>
+              <button onClick={() => setViewRow(row)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(124,58,237,0.5)', background:'rgba(124,58,237,0.2)', color:'#e2d9f3', fontSize:11, cursor:'pointer', fontWeight:'bold' }}>View</button>
               <button onClick={() => startEdit(row)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(255,255,255,0.15)', background:'transparent', color:'#c4b5fd', fontSize:11, cursor:'pointer' }}>{isAdmin ? 'Edit' : 'Suggest edit'}</button>
               {isAdmin && <button onClick={() => remove(row.id)} style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(248,113,113,0.3)', background:'transparent', color:'#f87171', fontSize:11, cursor:'pointer' }}>Delete</button>}
             </div>
           ))}
         </div>
       )}
+      {viewRow && <PinRecordModal row={viewRow} userId={userId} isAdmin={isAdmin} onEdit={startEdit} onClose={() => setViewRow(null)} />}
     </div>
   )
 }
