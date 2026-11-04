@@ -461,12 +461,12 @@ function AuthScreen({ onLogin, onLegal }) {
 }
 
 // ── Pin Card ──────────────────────────────────────────────────────────────────
-function PinCard({ pin, onDelete, onMove, onToggleTrader, showDesc=true }) {
+function PinCard({ pin, onDelete, onMove, onToggleTrader, onOpen, showDesc=true }) {
   const [hov, setHov] = useState(false)
   const bg = COLORS[hashCode(pin.id) % COLORS.length]
   return (
-    <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background:'rgba(255,255,255,0.05)', border:`1px solid ${hov?'rgba(124,58,237,0.5)':'rgba(255,255,255,0.09)'}`, borderRadius:14, overflow:'hidden', transition:'all .22s', transform:hov?'translateY(-3px)':'none', boxShadow:hov?'0 10px 28px rgba(124,58,237,0.2)':'0 2px 10px rgba(0,0,0,0.3)' }}>
+    <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} onClick={() => onOpen && onOpen(pin)}
+      style={{ cursor: onOpen ? 'pointer' : 'default', background:'rgba(255,255,255,0.05)', border:`1px solid ${hov?'rgba(124,58,237,0.5)':'rgba(255,255,255,0.09)'}`, borderRadius:14, overflow:'hidden', transition:'all .22s', transform:hov?'translateY(-3px)':'none', boxShadow:hov?'0 10px 28px rgba(124,58,237,0.2)':'0 2px 10px rgba(0,0,0,0.3)' }}>
       <div className="card-img" style={{ background:bg }}>
         {pin.image_url
           ? <img src={pin.image_url} alt={pin.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e => e.target.style.display='none'} />
@@ -480,6 +480,7 @@ function PinCard({ pin, onDelete, onMove, onToggleTrader, showDesc=true }) {
           <div style={{ background:'rgba(0,0,0,0.7)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:5, padding:'2px 6px', fontSize:9, fontWeight:'bold', color:'#e2d9f3', letterSpacing:1 }}>
             {pin.list==='have'?'HAVE':'WANT'}
           </div>
+          {pin.database_id && <div title="Linked to the pin database" style={{ background:'rgba(52,211,153,0.85)', borderRadius:5, padding:'2px 5px', fontSize:9, fontWeight:'bold', color:'#042f2e' }}>DB ✓</div>}
         </div>
       </div>
       <div style={{ padding:'10px 10px 10px' }}>
@@ -491,7 +492,7 @@ function PinCard({ pin, onDelete, onMove, onToggleTrader, showDesc=true }) {
           </div>
         )}
         {showDesc && pin.description && <div className="card-desc">{pin.description}</div>}
-        <div style={{ display:'flex', gap:6 }}>
+        <div style={{ display:'flex', gap:6 }} onClick={e => e.stopPropagation()}>
           <button onClick={() => onMove(pin.id, pin.list==='have'?'want':'have')}
             style={{ flex:1, padding:'7px 0', border:'1px solid rgba(124,58,237,0.4)', borderRadius:7, background:'rgba(124,58,237,0.15)', color:'#c4b5fd', cursor:'pointer', fontSize:11, fontWeight:600 }}>
             {pin.list==='have'?'→ Wish List':'→ Collection'}
@@ -758,6 +759,8 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
   const [matches, setMatches] = useState([])
   const [showMatches, setShowMatches] = useState(false)
   const [aiGuess, setAiGuess] = useState(null)
+  const [showDbPanel, setShowDbPanel] = useState(false)
+  const [submitToDb, setSubmitToDb] = useState(true)
   const fileRef = useRef()
   const aiRef = useRef()
 
@@ -887,7 +890,22 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
         const { data } = supabase.storage.from('pin-images').getPublicUrl(path)
         finalUrl = data.publicUrl
       }
-      await onAdd({ name:name.trim(), series:series.trim(), description:desc.trim(), image_url:finalUrl, list, estimated_value: estValue ? parseFloat(estValue) : null })
+      // Manual pins are also sent to the pin database for review, so they can be used in books.
+      // If an approved record with this exact name already exists, nothing is submitted: link it later from the pin's detail page.
+      let databaseId = null
+      if (submitToDb) {
+        const esc = name.trim().replace(/[\\%_]/g, m => '\\' + m)
+        const { data: existing } = await supabase.from('pin_database').select('id').ilike('name', esc).limit(1)
+        if (!existing || existing.length === 0) {
+          const { data: created } = await supabase.from('pin_database').insert([{
+            name: name.trim(), series: series.trim() || null, description: desc.trim() || null,
+            estimated_value: estValue ? parseFloat(estValue) : null, image_url: finalUrl || null, status:'pending', submitted_by: userId
+          }]).select('id').single()
+          databaseId = created?.id || null
+        }
+      }
+      await onAdd({ name:name.trim(), series:series.trim(), description:desc.trim(), image_url:finalUrl, list, estimated_value: estValue ? parseFloat(estValue) : null,
+        ...(databaseId ? { database_id: databaseId, image_source: finalUrl ? 'own' : null, own_image_url: finalUrl || null } : {}) })
       setName(''); setSeries(''); setDesc(''); setEstValue(''); setImageUrl(''); setPreview(''); setImageFile(null); setIdentified(false)
       if (fileRef.current) fileRef.current.value = ''
       if (aiRef.current) aiRef.current.value = ''
@@ -909,6 +927,14 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
           </button>
         )}
       </div>
+
+      {showDbPanel ? (
+        <DatabaseAddPanel userId={userId} onCancel={() => setShowDbPanel(false)} onConfirm={async payload => { await onAdd(payload); setShowDbPanel(false) }} />
+      ) : (
+        <button onClick={() => setShowDbPanel(true)} style={{ width:'100%', padding:'14px', marginBottom:18, border:'1px solid rgba(124,58,237,0.5)', borderRadius:14, background:'rgba(124,58,237,0.18)', color:'#e2d9f3', cursor:'pointer', fontSize:15, fontWeight:'bold' }}>
+          🔎 Pick a pin from the database
+        </button>
+      )}
 
       {/* AI Identifier Section */}
       <div style={{ background:'linear-gradient(135deg,rgba(124,58,237,0.15),rgba(219,39,119,0.15))', border:'1px solid rgba(124,58,237,0.4)', borderRadius:16, padding:'18px', marginBottom:18 }}>
@@ -1042,6 +1068,10 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
           </>
         )}
 
+        <label style={{ display:'flex', gap:8, alignItems:'flex-start', fontSize:12, color:'#94a3b8', lineHeight:1.5, marginBottom:14, cursor:'pointer' }}>
+          <input type="checkbox" checked={submitToDb} onChange={e => setSubmitToDb(e.target.checked)} style={{ marginTop:3, flexShrink:0 }} />
+          <span>Also submit this pin to the pin database for review. Pins must be in the database to be added to a book.</span>
+        </label>
         {error && <div style={{ color:'#f87171', fontSize:13, marginBottom:12 }}>⚠️ {error}</div>}
         <button className="primary-btn" onClick={submit} disabled={loading}
           style={{ background:ok?'linear-gradient(135deg,#059669,#0891b2)':loading?'rgba(124,58,237,0.4)':'linear-gradient(135deg,#7c3aed,#db2777)' }}>
@@ -1053,8 +1083,9 @@ function AddPinForm({ onAdd, userId, hasAccess, onUpgrade, onMultiScan }) {
 }
 
 // ── Pin List ──────────────────────────────────────────────────────────────────
-function PinList({ pins, listType, onDelete, onMove, onToggleTrader, loading, userId }) {
+function PinList({ pins, listType, onDelete, onMove, onToggleTrader, onPinChange, loading, userId }) {
   const [search, setSearch] = useState('')
+  const [detailPin, setDetailPin] = useState(null)
   const storageKey = `castlepins_showdesc_list_${userId}`
   const [showDesc, setShowDesc] = useState(() => {
     const saved = localStorage.getItem(storageKey)
@@ -1097,9 +1128,10 @@ function PinList({ pins, listType, onDelete, onMove, onToggleTrader, loading, us
         </div>
       ) : (
         <div className="pin-grid">
-          {filtered.map(pin => <PinCard key={pin.id} pin={pin} onDelete={onDelete} onMove={onMove} onToggleTrader={onToggleTrader} showDesc={showDesc} />)}
+          {filtered.map(pin => <PinCard key={pin.id} pin={pin} onDelete={onDelete} onMove={onMove} onToggleTrader={onToggleTrader} onOpen={setDetailPin} showDesc={showDesc} />)}
         </div>
       )}
+      {detailPin && <PinDetailModal pin={detailPin} userId={userId} onPinChange={onPinChange} onClose={() => setDetailPin(null)} />}
     </div>
   )
 }
@@ -2086,12 +2118,325 @@ function PinChecklistsPage({ userId }) {
   )
 }
 
-function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdateBook, hasAccess, onUpgrade, userId }) {
+// ── Pin database: search, add-from-database, and pin detail ──────────────────
+const DB_CHIP = active => ({ padding:'7px 12px', borderRadius:10, border:`1px solid ${active?'rgba(124,58,237,0.7)':'rgba(255,255,255,0.15)'}`, background:active?'rgba(124,58,237,0.3)':'transparent', color:active?'#e2d9f3':'#94a3b8', fontSize:12, cursor:'pointer', fontWeight:'bold' })
+const DB_PRIMARY = { padding:'10px 16px', borderRadius:10, border:'none', background:'linear-gradient(135deg,#7c3aed,#db2777)', color:'#fff', fontSize:13, fontWeight:'bold', cursor:'pointer' }
+
+function dbFacts(e) {
+  return [['Series', e.series], ['Park', e.park], ['Release year', e.release_year], ['Edition size', e.edition_size],
+    ['Estimated value', e.estimated_value != null ? `$${e.estimated_value}` : null]].filter(([, v]) => v)
+}
+
+// Search box + results from the approved pin database
+function DatabaseSearch({ onSelect, autoFocus }) {
+  const [q, setQ] = useState('')
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      setLoading(true)
+      let query = supabase.from('pin_database').select('*').eq('status', 'approved').order('name').limit(30)
+      const term = q.trim().replace(/[,()]/g, ' ').replace(/[\\%_]/g, m => '\\' + m)
+      if (term) query = query.or(`name.ilike.%${term}%,series.ilike.%${term}%`)
+      const { data } = await query
+      setRows(data || []); setLoading(false)
+    }, 250)
+    return () => clearTimeout(t)
+  }, [q])
+  return (
+    <div>
+      <input className="search-bar" autoFocus={autoFocus} placeholder="🔍 Search by pin name or series..." value={q} onChange={e => setQ(e.target.value)} />
+      <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:340, overflowY:'auto', marginTop:8 }}>
+        {loading && rows.length === 0 && <div style={{ color:'#64748b', fontSize:12, padding:8 }}>Searching...</div>}
+        {!loading && rows.length === 0 && <div style={{ color:'#64748b', fontSize:12, padding:8 }}>No pins found. If it's missing, you can add it as a new pin and submit it to the database.</div>}
+        {rows.map(r => (
+          <button key={r.id} onClick={() => onSelect(r)} style={{ display:'flex', gap:10, alignItems:'center', textAlign:'left', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:10, padding:8, cursor:'pointer' }}>
+            <div style={{ width:44, height:44, borderRadius:8, overflow:'hidden', background:'#e2e8f0', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              {r.image_url ? <img src={r.image_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <span>📌</span>}
+            </div>
+            <div style={{ minWidth:0 }}>
+              <div style={{ fontSize:13, fontWeight:'bold', color:'#f1f5f9', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.name}</div>
+              <div style={{ fontSize:11, color:'#94a3b8' }}>{[r.series, r.park, r.release_year].filter(Boolean).join(' • ') || 'No details'}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Builds the pin row to save for a chosen database entry and picture choice
+async function pinPayloadFromEntry(userId, entry, { imageChoice, file, list }) {
+  let image_url = null, own_image_url = null, image_source = null
+  if (imageChoice === 'own' && file) {
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+    const path = `${userId}/${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('pin-images').upload(path, file)
+    if (error) throw error
+    image_url = own_image_url = supabase.storage.from('pin-images').getPublicUrl(path).data.publicUrl
+    image_source = 'own'
+  } else if (entry.image_url) {
+    image_url = entry.image_url; image_source = 'database'
+  }
+  return {
+    name: entry.name, series: entry.series || '', description: entry.description || '',
+    estimated_value: entry.estimated_value ?? null, image_url, own_image_url, image_source,
+    database_id: entry.id, list
+  }
+}
+
+// Pick a pin from the database, choose picture (database or your own), then add it
+function DatabaseAddPanel({ userId, onConfirm, onCancel, defaultList = 'have', showList = true }) {
+  const [entry, setEntry] = useState(null)
+  const [imageChoice, setImageChoice] = useState('database')
+  const [file, setFile] = useState(null)
+  const [preview, setPreview] = useState('')
+  const [list, setList] = useState(defaultList)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  function pick(e) { setEntry(e); setImageChoice(e.image_url ? 'database' : 'own'); setFile(null); setPreview(''); setError('') }
+  function onFile(ev) {
+    const f = ev.target.files[0]; if (!f) return
+    setFile(f); const r = new FileReader(); r.onload = x => setPreview(x.target.result); r.readAsDataURL(f)
+  }
+  async function confirm() {
+    if (imageChoice === 'own' && !file) { setError('Choose your photo, or switch to the database picture.'); return }
+    setBusy(true); setError('')
+    try { await onConfirm(await pinPayloadFromEntry(userId, entry, { imageChoice, file, list })) }
+    catch (e) { setError(e.message || 'Could not add this pin.'); setBusy(false) }
+  }
+
+  return (
+    <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(124,58,237,0.35)', borderRadius:14, padding:14, marginBottom:16 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+        <div style={{ fontSize:14, fontWeight:'bold', color:'#c4b5fd' }}>🔎 Add from the pin database</div>
+        <button onClick={onCancel} style={{ background:'none', border:'none', color:'#94a3b8', cursor:'pointer', fontSize:13 }}>Cancel</button>
+      </div>
+      {!entry ? <DatabaseSearch onSelect={pick} autoFocus /> : (
+        <div>
+          <div style={{ display:'flex', gap:12, marginBottom:12 }}>
+            <div style={{ width:84, height:84, borderRadius:10, overflow:'hidden', background:'#e2e8f0', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              {(imageChoice === 'own' && preview) ? <img src={preview} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                : entry.image_url ? <img src={entry.image_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <span style={{ fontSize:30 }}>📌</span>}
+            </div>
+            <div>
+              <div style={{ fontSize:15, fontWeight:'bold', color:'#f1f5f9' }}>{entry.name}</div>
+              <div style={{ fontSize:12, color:'#94a3b8' }}>{dbFacts(entry).map(([, v]) => v).join(' • ')}</div>
+              <button onClick={() => setEntry(null)} style={{ background:'none', border:'none', color:'#a78bfa', fontSize:12, cursor:'pointer', padding:0, marginTop:4 }}>← Choose a different pin</button>
+            </div>
+          </div>
+
+          <div style={{ fontSize:12, color:'#a78bfa', fontWeight:'bold', marginBottom:6 }}>Picture</div>
+          <div style={{ display:'flex', gap:8, marginBottom:8 }}>
+            <button disabled={!entry.image_url} onClick={() => setImageChoice('database')} style={{ ...DB_CHIP(imageChoice === 'database'), opacity: entry.image_url ? 1 : .4 }}>Database picture</button>
+            <button onClick={() => setImageChoice('own')} style={DB_CHIP(imageChoice === 'own')}>My own picture</button>
+          </div>
+          {imageChoice === 'own' && (
+            <label style={{ display:'block', textAlign:'center', padding:11, border:'1px dashed rgba(255,255,255,0.25)', borderRadius:10, color:'#94a3b8', cursor:'pointer', fontSize:13, marginBottom:10 }}>
+              {file ? `📷 ${file.name}` : '📁 Choose or take a photo'}
+              <input type="file" accept="image/*" style={{ display:'none' }} onChange={onFile} />
+            </label>
+          )}
+
+          {showList && (
+            <div style={{ display:'flex', gap:8, margin:'8px 0 12px' }}>
+              {[['have','🎒 My Collection'],['want','⭐ Wish List']].map(([k, l]) => <button key={k} onClick={() => setList(k)} style={{ ...DB_CHIP(list === k), flex:1 }}>{l}</button>)}
+            </div>
+          )}
+          {error && <div style={{ color:'#f87171', fontSize:12, marginBottom:8 }}>⚠️ {error}</div>}
+          <button onClick={confirm} disabled={busy} style={{ ...DB_PRIMARY, width:'100%', opacity: busy ? .6 : 1 }}>{busy ? 'Adding...' : '✨ Add this pin'}</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Pin detail: link a pin to its database record, choose its picture ────────
+function PinDetailModal({ pin, userId, onClose, onPinChange }) {
+  const [local, setLocal] = useState(pin)
+  const [loading, setLoading] = useState(true)
+  const [entry, setEntry] = useState(null)             // the linked database record
+  const [candidate, setCandidate] = useState(null)     // possible match waiting for "yes, same pin"
+  const [ownSubmission, setOwnSubmission] = useState(null)
+  const [searching, setSearching] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const fileRef = useRef()
+
+  async function patch(p) {
+    const { error } = await supabase.from('pins').update(p).eq('id', local.id)
+    if (error) { setMsg('Could not save: ' + error.message); return false }
+    setLocal(prev => ({ ...prev, ...p })); onPinChange && onPinChange(local.id, p)
+    return true
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (local.database_id) {
+        const { data } = await supabase.from('pin_database').select('*').eq('id', local.database_id).maybeSingle()
+        if (cancelled) return
+        if (data) { setEntry(data); setLoading(false); return }
+      }
+      const name = (local.name || '').trim()
+      if (name) {
+        const esc = name.replace(/[\\%_]/g, m => '\\' + m)
+        const { data } = await supabase.from('pin_database').select('*').ilike('name', esc).limit(20)
+        if (cancelled) return
+        const rows = data || []
+        const sameSeries = r => (r.series || '').toLowerCase() === (local.series || '').trim().toLowerCase()
+        const approved = rows.filter(r => r.status === 'approved')
+        setCandidate(approved.find(sameSeries) || approved[0] || null)
+        setOwnSubmission(rows.find(r => r.submitted_by === userId && r.status !== 'rejected') || null)
+      }
+      setLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  async function link(e) {
+    setBusy(true); setMsg('')
+    const p = { database_id: e.id }
+    if (local.image_url && local.image_source !== 'database') { p.own_image_url = local.own_image_url || local.image_url; p.image_source = 'own' }
+    else if (!local.image_url && e.image_url) { p.image_url = e.image_url; p.image_source = 'database' }
+    if (await patch(p)) { setEntry(e); setCandidate(null); setSearching(false) }
+    setBusy(false)
+  }
+  async function unlink() {
+    if (!window.confirm('Unlink this pin from the database record? It will no longer be allowed in pin books until you link it again.')) return
+    if (await patch({ database_id: null })) { setEntry(null); setCandidate(null) }
+  }
+  async function submitToDatabase() {
+    setBusy(true); setMsg('')
+    const image = local.own_image_url || local.image_url
+    const { data, error } = await supabase.from('pin_database').insert([{
+      name: (local.name || '').trim(), series: (local.series || '').trim() || null, description: (local.description || '').trim() || null,
+      image_url: image && !image.includes('/multiscan-') ? image : null, status: 'pending', submitted_by: userId
+    }]).select().single()
+    if (error) { setMsg('Could not submit: ' + error.message); setBusy(false); return }
+    await link(data)
+    setMsg('Submitted for review. You can add this pin to books now; the database record is marked pending until it is approved.')
+    setBusy(false)
+  }
+
+  async function usePicture(which) {
+    setMsg('')
+    if (which === 'database') {
+      if (!entry?.image_url) return
+      const p = { image_url: entry.image_url, image_source: 'database' }
+      if (local.image_source !== 'database' && local.image_url) p.own_image_url = local.own_image_url || local.image_url
+      await patch(p)
+    } else if (local.own_image_url) {
+      await patch({ image_url: local.own_image_url, image_source: 'own' })
+    } else fileRef.current?.click()
+  }
+  async function onOwnFile(ev) {
+    const f = ev.target.files[0]; if (!f) return
+    setBusy(true)
+    try {
+      const ext = (f.name.split('.').pop() || 'jpg').toLowerCase()
+      const path = `${userId}/${Date.now()}.${ext}`
+      const { error } = await supabase.storage.from('pin-images').upload(path, f)
+      if (error) throw error
+      const url = supabase.storage.from('pin-images').getPublicUrl(path).data.publicUrl
+      await patch({ image_url: url, own_image_url: url, image_source: 'own' })
+    } catch (e) { setMsg('Upload failed: ' + e.message) }
+    setBusy(false); ev.target.value = ''
+  }
+
+  const shownName = entry?.name || local.name
+  const shownImage = local.image_url || entry?.image_url
+  const box = { marginTop:14, fontSize:12, borderRadius:10, padding:'8px 10px', lineHeight:1.5 }
+
+  return (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width:'100%', maxWidth:460, maxHeight:'90vh', overflowY:'auto', background:'#1a1040', border:'1px solid rgba(124,58,237,0.4)', borderRadius:18, padding:18 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:12 }}>
+          <div style={{ fontSize:18, fontWeight:'bold', color:'#f1f5f9' }}>{shownName}</div>
+          <button onClick={onClose} aria-label="Close" style={{ background:'none', border:'none', color:'#94a3b8', fontSize:22, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+        <div style={{ borderRadius:12, overflow:'hidden', background:'#e2e8f0', display:'flex', alignItems:'center', justifyContent:'center', minHeight:160, maxHeight:340, marginBottom:12 }}>
+          {shownImage ? <img src={shownImage} alt={shownName} style={{ maxWidth:'100%', maxHeight:340, objectFit:'contain' }} /> : <span style={{ fontSize:56, opacity:.5 }}>📌</span>}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={onOwnFile} />
+
+        {loading ? <div style={{ color:'#64748b', fontSize:13, textAlign:'center', padding:10 }}>Looking up this pin...</div> : entry ? (
+          <>
+            {entry.status === 'approved'
+              ? <div style={{ fontSize:11, color:'#34d399', fontWeight:'bold', marginBottom:8 }}>✓ Linked to the CastlePins pin database</div>
+              : <div style={{ ...box, marginTop:0, marginBottom:8, color: entry.status === 'pending' ? '#fbbf24' : '#f87171', background: entry.status === 'pending' ? 'rgba(251,191,36,0.1)' : 'rgba(248,113,113,0.1)', border:`1px solid ${entry.status === 'pending' ? 'rgba(251,191,36,0.3)' : 'rgba(248,113,113,0.3)'}` }}>
+                  {entry.status === 'pending' ? 'This database record is waiting for review.' : 'This database record was not approved. You can unlink it and pick a different record.'}
+                </div>}
+            {dbFacts(entry).map(([k, v]) => (
+              <div key={k} style={{ display:'flex', justifyContent:'space-between', gap:10, padding:'7px 0', borderBottom:'1px solid rgba(255,255,255,0.07)', fontSize:13 }}>
+                <span style={{ color:'#94a3b8' }}>{k}</span><span style={{ color:'#f1f5f9', textAlign:'right' }}>{String(v)}</span>
+              </div>
+            ))}
+            {entry.description && <div style={{ fontSize:13, color:'#cbd5e1', lineHeight:1.6, marginTop:12 }}>{entry.description}</div>}
+            {entry.source_link && /^https?:\/\//.test(entry.source_link) && <a href={entry.source_link} target="_blank" rel="noopener noreferrer" style={{ display:'inline-block', marginTop:12, fontSize:12, color:'#a78bfa' }}>More info ↗</a>}
+
+            <div style={{ fontSize:12, color:'#a78bfa', fontWeight:'bold', margin:'16px 0 6px' }}>Picture for my pin</div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button disabled={!entry.image_url || busy} onClick={() => usePicture('database')} style={{ ...DB_CHIP(local.image_source === 'database'), opacity: entry.image_url ? 1 : .4 }}>Database picture</button>
+              <button disabled={busy} onClick={() => usePicture('own')} style={DB_CHIP(local.image_source === 'own')}>{local.own_image_url ? 'My picture' : 'Add my picture'}</button>
+            </div>
+            <button onClick={unlink} style={{ background:'none', border:'none', color:'#64748b', fontSize:11, textDecoration:'underline', cursor:'pointer', marginTop:16, padding:0 }}>Unlink from database record</button>
+          </>
+        ) : candidate && !searching ? (
+          <div style={{ border:'1px solid rgba(124,58,237,0.5)', background:'rgba(124,58,237,0.1)', borderRadius:12, padding:12 }}>
+            <div style={{ fontSize:13, fontWeight:'bold', color:'#e2d9f3', marginBottom:8 }}>Is this the same pin?</div>
+            <div style={{ display:'flex', gap:10, marginBottom:10 }}>
+              <div style={{ width:72, height:72, borderRadius:8, overflow:'hidden', background:'#e2e8f0', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {candidate.image_url ? <img src={candidate.image_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <span style={{ fontSize:26 }}>📌</span>}
+              </div>
+              <div>
+                <div style={{ fontSize:14, fontWeight:'bold', color:'#f1f5f9' }}>{candidate.name}</div>
+                <div style={{ fontSize:12, color:'#94a3b8' }}>{dbFacts(candidate).map(([, v]) => v).join(' • ') || 'No other details'}</div>
+              </div>
+            </div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button disabled={busy} onClick={() => link(candidate)} style={{ ...DB_PRIMARY, flex:1 }}>Yes, link it</button>
+              <button disabled={busy} onClick={() => setCandidate(null)} style={{ ...DB_CHIP(false), flex:1 }}>No, different pin</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize:12, color:'#fbbf24', marginBottom:8 }}>This pin isn't linked to the pin database yet. Pins must be linked before they can go in a book.</div>
+            {local.series && <div style={{ fontSize:13, color:'#cbd5e1', marginBottom:6 }}>Series: {local.series}</div>}
+            {local.description && <div style={{ fontSize:13, color:'#cbd5e1', lineHeight:1.6 }}>{local.description}</div>}
+            {searching ? (
+              <div style={{ marginTop:12 }}>
+                <DatabaseSearch onSelect={e => { setCandidate(e); setSearching(false) }} autoFocus />
+                <button onClick={() => setSearching(false)} style={{ background:'none', border:'none', color:'#94a3b8', fontSize:12, cursor:'pointer', marginTop:8, padding:0 }}>Cancel search</button>
+              </div>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:14 }}>
+                <button onClick={() => setSearching(true)} style={{ ...DB_CHIP(false), padding:'10px' }}>🔎 Search the database for this pin</button>
+                {ownSubmission ? (
+                  <button disabled={busy} onClick={() => link(ownSubmission)} style={DB_PRIMARY}>Link to my pending submission</button>
+                ) : (
+                  <button disabled={busy} onClick={submitToDatabase} style={{ ...DB_PRIMARY, opacity: busy ? .6 : 1 }}>{busy ? 'Submitting...' : '📤 Submit to pin database'}</button>
+                )}
+                <div style={{ fontSize:11, color:'#64748b', lineHeight:1.5 }}>New database entries are reviewed before they go live.</div>
+              </div>
+            )}
+          </>
+        )}
+        {msg && <div style={{ ...box, color:'#fbbf24', background:'rgba(251,191,36,0.1)', border:'1px solid rgba(251,191,36,0.3)' }}>{msg}</div>}
+      </div>
+    </div>
+  )
+}
+
+function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdateBook, onAddFromDatabase, onPinChange, hasAccess, onUpgrade, userId }) {
   const [newName, setNewName] = useState('')
   const [newIcon, setNewIcon] = useState('🏰')
   const [newPublic, setNewPublic] = useState(true)
   const [adding, setAdding] = useState(false)
   const [selectedBook, setSelectedBook] = useState(null)
+  const [detailPin, setDetailPin] = useState(null)
+  const [dbOpen, setDbOpen] = useState(false)
   const [showIconPicker, setShowIconPicker] = useState(false)
   const [selectedPins, setSelectedPins] = useState([])
   const [mode, setMode] = useState('view') // 'view' | 'add' | 'remove'
@@ -2139,13 +2484,15 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
     const book = books.find(b => b.id === selectedBook)
     if (!book) { setSelectedBook(null); return null }
     const bookPins = pins.filter(p => (p.book_ids||[]).includes(book.id))
-    const availablePins = pins // ALL pins can be added
+    // Only pins linked to a pin database record can go in a book
+    const availablePins = pins.filter(p => p.database_id && !(p.book_ids||[]).includes(book.id))
+    const unlinkedPins = pins.filter(p => !p.database_id)
 
     if (mode === 'add' || mode === 'remove') {
       const pool = mode === 'add' ? availablePins : bookPins
       return (
         <div className="fade-up">
-          <button onClick={() => { setMode('view'); setSelectedPins([]) }}
+          <button onClick={() => { setMode('view'); setSelectedPins([]); setDbOpen(false) }}
             style={{ background:'transparent', border:'none', color:'#a78bfa', cursor:'pointer', fontSize:14, marginBottom:16, padding:0 }}>
             ← Cancel
           </button>
@@ -2159,9 +2506,17 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
               {mode==='add' ? `＋ Add ${selectedPins.length}` : `− Remove ${selectedPins.length}`}
             </button>
           </div>
-          {pool.length === 0 ? (
-            <div style={{ textAlign:'center', padding:'40px 0', color:'#64748b' }}>
-              {mode==='add' ? 'All your pins are already in books!' : 'No pins in this book yet.'}
+          {mode==='add' && !dbOpen && (
+            <button onClick={() => setDbOpen(true)} style={{ width:'100%', padding:'12px', marginBottom:14, border:'1px solid rgba(124,58,237,0.5)', borderRadius:12, background:'rgba(124,58,237,0.18)', color:'#e2d9f3', cursor:'pointer', fontSize:14, fontWeight:'bold' }}>
+              🔎 Add a pin from the pin database
+            </button>
+          )}
+          {mode==='add' && dbOpen ? (
+            <DatabaseAddPanel userId={userId} onCancel={() => setDbOpen(false)}
+              onConfirm={async payload => { await onAddFromDatabase(payload, book.id); setDbOpen(false); setMode('view') }} />
+          ) : pool.length === 0 ? (
+            <div style={{ textAlign:'center', padding:'40px 0', color:'#64748b', fontSize:13, lineHeight:1.6 }}>
+              {mode==='add' ? 'No linked pins available. Add one from the pin database above, or link your existing pins below.' : 'No pins in this book yet.'}
             </div>
           ) : (
             <>
@@ -2182,6 +2537,23 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
               </div>
             </>
           )}
+          {mode==='add' && !dbOpen && unlinkedPins.length > 0 && (
+            <div style={{ marginTop:22 }}>
+              <div style={{ fontSize:13, fontWeight:'bold', color:'#fbbf24', marginBottom:4 }}>Not linked to the database yet ({unlinkedPins.length})</div>
+              <div style={{ fontSize:11, color:'#64748b', marginBottom:10 }}>Tap a pin to link it to its database record or submit it. Then it can go in a book.</div>
+              <div className="pin-grid">
+                {unlinkedPins.map(pin => (
+                  <div key={pin.id} onClick={() => setDetailPin(pin)} style={{ opacity:.6, cursor:'pointer', background:'rgba(255,255,255,0.04)', border:'1px dashed rgba(251,191,36,0.4)', borderRadius:14, overflow:'hidden' }}>
+                    <div style={{ width:'100%', height:80, background:COLORS[hashCode(pin.id)%COLORS.length], display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+                      {pin.image_url ? <img src={pin.image_url} alt={pin.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e=>e.target.style.display='none'} /> : <span style={{ fontSize:24, opacity:.65 }}>📌</span>}
+                    </div>
+                    <div style={{ padding:'6px 8px' }}><div className="card-name">{pin.name}</div></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {detailPin && <PinDetailModal pin={detailPin} userId={userId} onPinChange={onPinChange} onClose={() => setDetailPin(null)} />}
         </div>
       )
     }
@@ -2241,7 +2613,7 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
         ) : (
           <div className="pin-grid">
             {bookPins.map(pin => (
-              <div key={pin.id} style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:14, overflow:'hidden' }}>
+              <div key={pin.id} onClick={() => setDetailPin(pin)} style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:14, overflow:'hidden', cursor:'pointer' }}>
                 <div style={{ width:'100%', height:110, background:COLORS[hashCode(pin.id)%COLORS.length], display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
                   {pin.image_url
                     ? <img src={pin.image_url} alt={pin.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e=>e.target.style.display='none'} />
@@ -2259,6 +2631,7 @@ function BooksPage({ books, pins, onAddBook, onDeleteBook, onAssignPin, onUpdate
             ))}
           </div>
         )}
+        {detailPin && <PinDetailModal pin={detailPin} userId={userId} onPinChange={onPinChange} onClose={() => setDetailPin(null)} />}
       </div>
     )
   }
@@ -3079,7 +3452,7 @@ const REVIEW_FIELDS = [
 
 // Copy an externally hosted image into our own storage so approved entries never break
 async function mirrorImage(url) {
-  if (!url || url.includes('/storage/v1/object/public/pin-images/')) return url
+  if (!url || url.includes('/storage/v1/object/public/pin-images/db/')) return url
   try {
     const res = await fetch(url)
     if (!res.ok) return url
@@ -3866,7 +4239,7 @@ export default function App() {
     if (scanImageData) {
       try {
         const blob = await (await fetch(scanImageData)).blob()
-        const path = `${user.id}/scan-${Date.now()}.jpg`
+        const path = `${user.id}/multiscan-${Date.now()}.jpg`
         const { error: upErr } = await supabase.storage.from('pin-images').upload(path, blob)
         if (!upErr) {
           const { data } = supabase.storage.from('pin-images').getPublicUrl(path)
@@ -3893,10 +4266,28 @@ export default function App() {
     else if (error) console.error('Add pin error:', error)
   }
 
+  function updatePinLocal(id, patch) {
+    setPins(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p))
+  }
+
+  // Creates a pin from a pin-database record and (optionally) puts it straight into a book
+  async function addPinFromDatabase(payload, bookId) {
+    const { data, error } = await supabase.from('pins').insert([{ ...payload, user_id: user.id }]).select().single()
+    if (error) throw error
+    let pin = { ...data, book_ids: [] }
+    if (bookId) {
+      const { error: bErr } = await supabase.from('pin_books').upsert({ pin_id: data.id, book_id: bookId })
+      if (!bErr) pin.book_ids = [bookId]
+    }
+    setPins(prev => [pin, ...prev])
+    return pin
+  }
+
   async function deletePin(id, imageUrl) {
     if (imageUrl && imageUrl.includes('supabase')) {
       const path = imageUrl.split('/pin-images/')[1]
-      if (path) await supabase.storage.from('pin-images').remove([path])
+      // Never delete shared database pictures (db/ folder) when a user removes their pin
+      if (path && !path.startsWith('db/')) await supabase.storage.from('pin-images').remove([path])
     }
     await supabase.from('pins').delete().eq('id', id)
     setPins(prev => prev.filter(p => p.id!==id))
@@ -4077,8 +4468,8 @@ export default function App() {
 
       {/* Main */}
       <div className="main-content">
-        {tab==='have'    && <PinList pins={pins} listType="have" onDelete={deletePin} onMove={movePin} onToggleTrader={TRADING_ENABLED ? toggleTrader : undefined} loading={pinsLoading} userId={user.id} />}
-        {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} onToggleTrader={TRADING_ENABLED ? toggleTrader : undefined} loading={pinsLoading} userId={user.id} />}
+        {tab==='have'    && <PinList pins={pins} listType="have" onDelete={deletePin} onMove={movePin} onToggleTrader={TRADING_ENABLED ? toggleTrader : undefined} onPinChange={updatePinLocal} loading={pinsLoading} userId={user.id} />}
+        {tab==='want'    && <PinList pins={pins} listType="want" onDelete={deletePin} onMove={movePin} onToggleTrader={TRADING_ENABLED ? toggleTrader : undefined} onPinChange={updatePinLocal} loading={pinsLoading} userId={user.id} />}
         {tab==='books'   && (
           <div>
             <div style={{ display:'flex', gap:8, marginBottom:14 }}>
@@ -4094,7 +4485,7 @@ export default function App() {
               </button>
             </div>
             {booksSubTab === 'mine'
-              ? <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} onUpdateBook={updateBook} hasAccess={hasAccess} onUpgrade={handleUpgrade} userId={user.id} />
+              ? <BooksPage books={books} pins={pins} onAddBook={addBook} onDeleteBook={deleteBook} onAssignPin={assignPin} onUpdateBook={updateBook} onAddFromDatabase={addPinFromDatabase} onPinChange={updatePinLocal} hasAccess={hasAccess} onUpgrade={handleUpgrade} userId={user.id} />
               : <PinChecklistsPage userId={user.id} />
             }
           </div>
