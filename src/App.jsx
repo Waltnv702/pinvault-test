@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabase'
 
 // Headers for our /api endpoints: includes the signed-in user's token so the server can verify who is calling
@@ -3034,6 +3034,29 @@ function AdminChecklistBuilder() {
   )
 }
 
+// Resizes a photo to a JPEG (max 1000px), the same way the Add Pin form does before searching
+function shrinkPhoto(file, max = 1000) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Could not read the photo'))
+    reader.onload = ev => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('Could not open the photo'))
+      img.onload = () => {
+        let { width, height } = img
+        if (width > max || height > max) {
+          if (width > height) { height = (height / width) * max; width = max } else { width = (width / height) * max; height = max }
+        }
+        const c = document.createElement('canvas'); c.width = width; c.height = height
+        c.getContext('2d').drawImage(img, 0, 0, width, height)
+        c.toBlob(b => b ? resolve(b) : reject(new Error('Could not process the photo')), 'image/jpeg', 0.85)
+      }
+      img.src = ev.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 function AdminPinDatabase({ isAdmin = false, userId }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -3099,8 +3122,9 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
     reader.readAsDataURL(file)
     try {
       // Upload to a scratch path just to get a public URL for reverse image search
-      const path = `lookup-scratch/${Date.now()}-${file.name.replace(/\s+/g,'_')}`
-      const { error: upErr } = await supabase.storage.from('pin-images').upload(path, file)
+      const blob = await shrinkPhoto(file)
+      const path = `lookup-scratch/${Date.now()}.jpg`
+      const { error: upErr } = await supabase.storage.from('pin-images').upload(path, blob, { contentType:'image/jpeg' })
       if (upErr) throw new Error('Upload failed: ' + upErr.message)
       const { data: pub } = supabase.storage.from('pin-images').getPublicUrl(path)
 
@@ -3112,20 +3136,16 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
       const data = await resp.json()
       if (!data.found) throw new Error(data.reason || 'No matches found')
 
-      let results = data.matches || []
-      const pricedCount = results.filter(m => typeof m.price === 'number').length
-
-      // If Lens found few/no priced items, fall back to the separate eBay search
-      // (still real listings, just not guaranteed to be pixel-matches of this exact pin)
-      if (pricedCount < 2 && (data.ebay_matches || []).length > 0) {
-        results = data.ebay_matches.map(m => ({
-          ...m,
-          price: parseFloat((m.price || '').replace(/[^0-9.]/g, '')) || null
-        }))
-      }
-
+      // Visual matches (what Google found for this exact photo) always come first.
+      // eBay keyword results are shown separately below them as a price reference only.
+      const visual = (data.matches || []).map(m => ({ ...m, kind:'visual' }))
+      const ebay = (data.ebay_matches || []).map(m => ({
+        ...m, kind:'ebay', price: parseFloat((m.price || '').replace(/[^0-9.]/g, '')) || null
+      }))
+      const results = [...visual, ...ebay]
+      const visualPriced = visual.filter(m => typeof m.price === 'number').length
       setLensResults(results)
-      setLensChecked(results.map(m => typeof m.price === 'number'))
+      setLensChecked(results.map(m => typeof m.price === 'number' && (m.kind === 'visual' || visualPriced < 2)))
     } catch (err) {
       setLensError(err.message)
     }
@@ -3351,7 +3371,13 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
               {lensResults.map((m, i) => {
                 const hasPrice = typeof m.price === 'number'
                 return (
-                  <div key={i} style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(255,255,255,0.04)', borderRadius:8, padding:8, opacity: hasPrice && !lensChecked[i] ? 0.4 : 1 }}>
+                  <React.Fragment key={i}>
+                  {(i === 0 || lensResults[i-1].kind !== m.kind) && (
+                    <div style={{ fontSize:10, fontWeight:'bold', color: m.kind === 'visual' ? '#c4b5fd' : '#94a3b8', marginTop: i === 0 ? 0 : 8 }}>
+                      {m.kind === 'visual' ? '📷 Visual matches for your photo' : '🛒 eBay listings found by keyword (price reference, may not be this exact pin)'}
+                    </div>
+                  )}
+                  <div style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(255,255,255,0.04)', borderRadius:8, padding:8, opacity: hasPrice && !lensChecked[i] ? 0.4 : 1 }}>
                     {hasPrice
                       ? <input type="checkbox" checked={lensChecked[i]} onChange={() => toggleLensChecked(i)} style={{ width:16, height:16, flexShrink:0, cursor:'pointer' }} />
                       : <div style={{ width:16, flexShrink:0 }} />
@@ -3367,6 +3393,7 @@ function AdminPinDatabase({ isAdmin = false, userId }) {
                       style={{ padding:'6px 10px', borderRadius:6, border:'1px solid rgba(124,58,237,0.6)', background:'rgba(124,58,237,0.25)', color:'#e2d9f3', fontSize:11, fontWeight:'bold', cursor:'pointer', whiteSpace:'nowrap', opacity: fillingId !== null ? .6 : 1 }}>
                       {fillingId === 'lens-' + i ? 'Reading...' : 'Fill form'}</button>
                   </div>
+                  </React.Fragment>
                 )
               })}
             </div>
