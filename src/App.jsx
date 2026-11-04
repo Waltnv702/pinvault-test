@@ -3561,6 +3561,188 @@ function TradePostGenerator({ pins, books, userId }) {
   )
 }
 
+// ── Mail Trade Tracking ───────────────────────────────────────────────────────
+const MT_OVERDUE_AFTER_DAYS = 8
+
+function mtToday() {
+  const d = new Date(); d.setHours(0, 0, 0, 0); return d
+}
+function mtDaysSince(dateStr) {
+  if (!dateStr) return 0
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return Math.floor((mtToday() - new Date(y, m - 1, d)) / 86400000)
+}
+// Status shown to the user. "Overdue" is worked out from the trade date each time the page opens.
+function mtDisplayStatus(row) {
+  if (row.status === 'complete') return { key:'complete', label:'Complete' }
+  const days = mtDaysSince(row.trade_date)
+  if (days > MT_OVERDUE_AFTER_DAYS) return { key:'overdue', label:`Overdue ${days} days`, days }
+  return { key:'in_progress', label:'In Progress' }
+}
+function mtIso(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+// Accepts 11/4/2026, 11/4/26, 2026-11-04
+function mtParseDate(v) {
+  const t = (v || '').trim(); if (!t) return null
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`
+  m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/)
+  if (m) { const yr = m[3].length === 2 ? '20' + m[3] : m[3]; return `${yr}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}` }
+  return null
+}
+const MT_COLORS = {
+  in_progress: { fg:'#fbbf24', bg:'rgba(251,191,36,0.12)', bd:'rgba(251,191,36,0.4)' },
+  overdue:     { fg:'#f87171', bg:'rgba(248,113,113,0.14)', bd:'rgba(248,113,113,0.5)' },
+  complete:    { fg:'#34d399', bg:'rgba(52,211,153,0.12)', bd:'rgba(52,211,153,0.4)' },
+}
+
+function MailTradesPage({ userId }) {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('all')
+  const [error, setError] = useState('')
+  const [showImport, setShowImport] = useState(false)
+  const [importText, setImportText] = useState('')
+
+  async function load() {
+    setLoading(true)
+    const { data, error } = await supabase.from('mail_trades').select('*').eq('user_id', userId).order('trade_date', { ascending:false }).order('created_at', { ascending:false })
+    if (error) setError('Could not load trades: ' + error.message)
+    setRows(data || []); setLoading(false)
+  }
+  useEffect(() => { load() }, [userId])
+
+  async function addRow() {
+    const today = mtIso(new Date())
+    const { data, error } = await supabase.from('mail_trades').insert([{ user_id:userId, trade_date:today, date_sent:today }]).select().single()
+    if (error) { setError(error.message); return }
+    setRows(prev => [data, ...prev])
+  }
+  function edit(id, field, value) { setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r)) }
+  async function save(id, field, value) {
+    setError('')
+    const { error } = await supabase.from('mail_trades').update({ [field]: value === '' && (field === 'date_sent') ? null : value, updated_at:new Date().toISOString() }).eq('id', id)
+    if (error) setError('Could not save: ' + error.message)
+  }
+  async function remove(row) {
+    if (!window.confirm(`Delete the trade with ${row.trader_name || 'this trader'}?`)) return
+    const { error } = await supabase.from('mail_trades').delete().eq('id', row.id)
+    if (error) { setError(error.message); return }
+    setRows(prev => prev.filter(r => r.id !== row.id))
+  }
+  async function runImport() {
+    // Paste rows copied from Excel: Trader | Date of Trade | Pins to receive | Pins sent | Date sent | Tracking | Status
+    const lines = importText.split(/\r?\n/).map(l => l.split('\t')).filter(c => c.some(x => x.trim()))
+    const body = lines.filter(c => !/^trader$/i.test((c[0] || '').trim()))
+    const records = body.map(c => {
+      const st = (c[6] || '').toLowerCase()
+      return {
+        user_id:userId, trader_name:(c[0]||'').trim(), trade_date:mtParseDate(c[1]) || mtIso(new Date()),
+        pins_to_receive:(c[2]||'').trim(), pins_sent:(c[3]||'').trim(), date_sent:mtParseDate(c[4]),
+        tracking:(c[5]||'').replace(/\s+/g,''), status: st.includes('complete') ? 'complete' : 'in_progress'
+      }
+    })
+    if (!records.length) { setError('Nothing to import. Copy the rows from your spreadsheet and paste them here.'); return }
+    const { error } = await supabase.from('mail_trades').insert(records)
+    if (error) { setError(error.message); return }
+    setImportText(''); setShowImport(false); load()
+  }
+
+  const withStatus = rows.map(r => ({ ...r, ds: mtDisplayStatus(r) }))
+  const counts = { all:rows.length, in_progress:0, overdue:0, complete:0 }
+  withStatus.forEach(r => { counts[r.ds.key]++ })
+  const shown = withStatus.filter(r => filter === 'all' || r.ds.key === filter)
+
+  const cell = { padding:'6px 6px', borderBottom:'1px solid rgba(255,255,255,0.07)', verticalAlign:'middle' }
+  const input = { width:'100%', padding:'7px 8px', borderRadius:6, border:'1px solid rgba(255,255,255,0.12)', background:'rgba(255,255,255,0.04)', color:'#f1f5f9', fontSize:13, minWidth:0 }
+  const head = { ...cell, fontSize:11, color:'#94a3b8', textAlign:'left', fontWeight:'bold', whiteSpace:'nowrap', position:'sticky', top:0, background:'#1a1040' }
+  const chip = active => ({ padding:'6px 12px', borderRadius:16, border:`1px solid ${active?'rgba(124,58,237,0.6)':'rgba(255,255,255,0.15)'}`, background:active?'rgba(124,58,237,0.3)':'transparent', color:active?'#e2d9f3':'#94a3b8', fontSize:12, cursor:'pointer', fontWeight:'bold' })
+  const primary = { padding:'9px 14px', borderRadius:10, border:'none', background:'linear-gradient(135deg,#7c3aed,#db2777)', color:'#fff', fontSize:13, fontWeight:'bold', cursor:'pointer' }
+
+  return (
+    <div style={{ padding:'12px 4px' }}>
+      <div style={{ fontSize:18, fontWeight:'bold', color:'#f1f5f9', marginBottom:4 }}>📬 Mail Trade Tracking</div>
+      <div style={{ fontSize:12, color:'#64748b', marginBottom:12 }}>Keep track of pins you've traded by mail. A trade turns <span style={{ color:'#f87171' }}>Overdue</span> when it is still In Progress more than {MT_OVERDUE_AFTER_DAYS} days after the trade date.</div>
+
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:12, alignItems:'center' }}>
+        {[['all','All'],['in_progress','In Progress'],['overdue','Overdue'],['complete','Complete']].map(([k,l]) => (
+          <button key={k} onClick={() => setFilter(k)} style={chip(filter === k)}>{l} ({counts[k]})</button>
+        ))}
+        <div style={{ flex:1 }} />
+        <button onClick={() => setShowImport(v => !v)} style={chip(showImport)}>Paste from spreadsheet</button>
+        <button onClick={addRow} style={primary}>+ Add trade</button>
+      </div>
+
+      {showImport && (
+        <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, padding:12, marginBottom:12 }}>
+          <div style={{ fontSize:12, color:'#94a3b8', marginBottom:8 }}>In Excel or Google Sheets, select your rows (Trader through Trade Complete), copy, and paste below. Columns should be in this order: Trader, Date of Trade, Pins to receive, Pins sent, Date sent, Tracking, Status.</div>
+          <textarea value={importText} onChange={e => setImportText(e.target.value)} rows={5} placeholder="Paste here..."
+            style={{ ...input, fontFamily:'monospace', fontSize:12, marginBottom:8 }} />
+          <button onClick={runImport} style={primary}>Import rows</button>
+        </div>
+      )}
+
+      {error && <div style={{ color:'#f87171', fontSize:12, marginBottom:10 }}>⚠️ {error}</div>}
+
+      {loading ? <div style={{ textAlign:'center', color:'#64748b', padding:20 }}>Loading...</div> : shown.length === 0 ? (
+        <div style={{ textAlign:'center', color:'#64748b', padding:30, fontSize:13 }}>{rows.length === 0 ? 'No trades yet. Tap "+ Add trade" to start.' : 'No trades in this view.'}</div>
+      ) : (
+        <div style={{ overflowX:'auto', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12 }}>
+          <table style={{ width:'100%', minWidth:1020, borderCollapse:'collapse' }}>
+            <thead>
+              <tr>
+                <th style={{ ...head, minWidth:130 }}>Trader</th>
+                <th style={{ ...head, minWidth:128 }}>Date of Trade</th>
+                <th style={{ ...head, minWidth:150 }}>Pins to Receive</th>
+                <th style={{ ...head, minWidth:150 }}>Pins Sent</th>
+                <th style={{ ...head, minWidth:128 }}>Date Sent</th>
+                <th style={{ ...head, minWidth:210 }}>Tracking</th>
+                <th style={{ ...head, minWidth:150 }}>Status</th>
+                <th style={{ ...head, width:40 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map(r => {
+                const c = MT_COLORS[r.ds.key]
+                return (
+                  <tr key={r.id}>
+                    <td style={cell}><input style={input} value={r.trader_name} onChange={e => edit(r.id,'trader_name',e.target.value)} onBlur={e => save(r.id,'trader_name',e.target.value)} placeholder="Trader" /></td>
+                    <td style={cell}><input style={input} type="date" value={r.trade_date || ''} onChange={e => { edit(r.id,'trade_date',e.target.value); if (e.target.value) save(r.id,'trade_date',e.target.value) }} /></td>
+                    <td style={cell}><input style={input} value={r.pins_to_receive} onChange={e => edit(r.id,'pins_to_receive',e.target.value)} onBlur={e => save(r.id,'pins_to_receive',e.target.value)} /></td>
+                    <td style={cell}><input style={input} value={r.pins_sent} onChange={e => edit(r.id,'pins_sent',e.target.value)} onBlur={e => save(r.id,'pins_sent',e.target.value)} /></td>
+                    <td style={cell}><input style={input} type="date" value={r.date_sent || ''} onChange={e => { edit(r.id,'date_sent',e.target.value); save(r.id,'date_sent',e.target.value) }} /></td>
+                    <td style={cell}>
+                      <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                        <input style={input} value={r.tracking} onChange={e => edit(r.id,'tracking',e.target.value)} onBlur={e => { const v = e.target.value.replace(/\s+/g,''); edit(r.id,'tracking',v); save(r.id,'tracking',v) }} placeholder="USPS tracking #" inputMode="numeric" />
+                        {r.tracking && (
+                          <a href={`https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(r.tracking)}`} target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize:11, color:'#a78bfa', whiteSpace:'nowrap', textDecoration:'none', border:'1px solid rgba(167,139,250,0.4)', borderRadius:6, padding:'6px 8px' }}>Track ↗</a>
+                        )}
+                      </div>
+                    </td>
+                    <td style={cell}>
+                      <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                        <span style={{ display:'inline-block', textAlign:'center', fontSize:12, fontWeight:'bold', color:c.fg, background:c.bg, border:`1px solid ${c.bd}`, borderRadius:8, padding:'5px 8px', whiteSpace:'nowrap' }}>{r.ds.label}</span>
+                        <select value={r.status} onChange={e => { edit(r.id,'status',e.target.value); save(r.id,'status',e.target.value) }}
+                          style={{ ...input, padding:'4px 6px', fontSize:11, background:'#1a1040' }}>
+                          <option value="in_progress">In Progress</option>
+                          <option value="complete">Complete</option>
+                        </select>
+                      </div>
+                    </td>
+                    <td style={cell}><button onClick={() => remove(r)} title="Delete" style={{ background:'none', border:'none', color:'#f87171', cursor:'pointer', fontSize:16 }}>🗑</button></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Admin: manage users ───────────────────────────────────────────────────────
 function AdminUsers({ currentUserId }) {
   const [users, setUsers] = useState([])
@@ -3848,6 +4030,7 @@ export default function App() {
     { id:'add',     icon:'＋', label:'Add Pin' },
     ...(TRADING_ENABLED ? [{ id:'trade', icon:'🤝', label:'Trade' }] : []),
     { id:'profile', icon:'👤', label:'Profile' },
+    { id:'mailtrades', icon:'📬', label:'Mail Trades' },
     { id:'tradepost', icon:'📣', label:'Trade Post' },
     { id:'pindb', icon:'📋', label:'Pin Database' },
     ...(isAdminUser ? [{ id:'pin-review', icon:'✅', label:'Review Queue' }, { id:'users', icon:'👥', label:'Users' }, { id:'checklist-admin', icon:'🗂️', label:'Checklist Admin' }] : [])
@@ -3917,6 +4100,7 @@ export default function App() {
         )}
         {tab==='mystery' && <MysteryBoxesPage boxes={mysteryBoxes} userId={user.id} onAdd={addMysteryBox} onUpdate={updateMysteryBox} onDelete={deleteMysteryBox} loading={pinsLoading} />}
         {tab==='add'     && (multiScan && hasAccess ? <MultiPinScanner onAddMultiple={addMultiplePins} userId={user.id} onClose={() => setMultiScan(false)} /> : <AddPinForm onAdd={addPin} userId={user.id} hasAccess={hasAccess} onUpgrade={handleUpgrade} onMultiScan={() => setMultiScan(true)} />)}
+        {tab==='mailtrades' && <MailTradesPage userId={user.id} />}
         {tab==='tradepost' && <TradePostGenerator pins={pins} books={books} userId={user.id} />}
         {tab==='pindb'   && <AdminPinDatabase isAdmin={isAdminUser} userId={user.id} />}
         {tab==='pin-review' && isAdminUser && <AdminReviewQueue userId={user.id} />}
